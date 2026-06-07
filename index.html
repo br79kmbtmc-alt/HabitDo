@@ -1,0 +1,1017 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Günlük Panel</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<style>
+  :root {
+    --bg: #F7F5F0;
+    --surface: #FFFFFF;
+    --border: rgba(0,0,0,0.08);
+    --border-strong: rgba(0,0,0,0.14);
+    --text: #1A1917;
+    --text-muted: #7A7870;
+    --text-faint: #B0AEA8;
+    --green: #2D6A4F;
+    --green-bg: #EAF4EE;
+    --amber: #92400E;
+    --amber-bg: #FEF3C7;
+    --red: #991B1B;
+    --red-bg: #FEE2E2;
+    --accent: #1A1917;
+    --radius: 14px;
+    --radius-sm: 8px;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #141412;
+      --surface: #1E1D1B;
+      --border: rgba(255,255,255,0.07);
+      --border-strong: rgba(255,255,255,0.13);
+      --text: #F0EDE8;
+      --text-muted: #8A8880;
+      --text-faint: #4A4845;
+      --green: #6EE7A0;
+      --green-bg: #0D2E1E;
+      --amber: #FCD34D;
+      --amber-bg: #2A1F06;
+      --red: #FCA5A5;
+      --red-bg: #2A0E0E;
+      --accent: #F0EDE8;
+    }
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+
+  body {
+    font-family: 'DM Sans', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    padding: 0 0 3rem;
+  }
+
+  header {
+    padding: 2rem 1.25rem 1rem;
+    border-bottom: 0.5px solid var(--border);
+    margin-bottom: 1.5rem;
+  }
+
+  .day-name {
+    font-family: 'DM Serif Display', serif;
+    font-size: 28px;
+    font-weight: 400;
+    letter-spacing: -0.02em;
+    line-height: 1.1;
+  }
+
+  .date-line {
+    font-size: 13px;
+    color: var(--text-muted);
+    margin-top: 4px;
+    font-weight: 300;
+  }
+
+  .page { padding: 0 1.25rem; }
+
+  .section { margin-bottom: 2rem; }
+
+  .section-label {
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--text-faint);
+    margin-bottom: 10px;
+  }
+
+  /* Habit cards */
+  .habit-card {
+    background: var(--surface);
+    border: 0.5px solid var(--border);
+    border-radius: var(--radius);
+    padding: 14px 16px;
+    margin-bottom: 6px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    transition: transform 0.1s;
+  }
+
+  .habit-card:active { transform: scale(0.985); }
+
+  .habit-info { flex: 1; min-width: 0; }
+
+  .habit-name {
+    font-size: 15px;
+    font-weight: 400;
+    color: var(--text);
+  }
+
+  .streak-dots {
+    display: flex;
+    gap: 4px;
+    margin-top: 6px;
+    align-items: center;
+  }
+
+  .dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--border-strong);
+    flex-shrink: 0;
+  }
+
+  .dot.hit { background: var(--green); opacity: 0.75; }
+  .dot.today-hit { background: var(--green); opacity: 1; width: 9px; height: 9px; }
+
+  .streak-count {
+    font-size: 11px;
+    color: var(--text-faint);
+    margin-left: 4px;
+  }
+
+  .habit-btn {
+    font-family: 'DM Sans', sans-serif;
+    font-size: 13px;
+    font-weight: 400;
+    padding: 7px 16px;
+    border-radius: 100px;
+    border: 0.5px solid var(--border-strong);
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all 0.15s;
+    flex-shrink: 0;
+  }
+
+  .habit-btn:hover { background: var(--bg); }
+
+  .habit-btn.done {
+    background: var(--green-bg);
+    color: var(--green);
+    border-color: transparent;
+    font-weight: 500;
+  }
+
+  /* Shower card */
+  .shower-card {
+    background: var(--surface);
+    border: 0.5px solid var(--border);
+    border-radius: var(--radius);
+    padding: 14px 16px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .shower-info { flex: 1; }
+
+  .shower-title {
+    font-size: 15px;
+    color: var(--text);
+  }
+
+  .shower-sub {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-top: 3px;
+    font-weight: 300;
+  }
+
+  .status-pill {
+    font-size: 11px;
+    font-weight: 500;
+    padding: 4px 10px;
+    border-radius: 100px;
+    flex-shrink: 0;
+  }
+
+  .pill-ok { background: var(--green-bg); color: var(--green); }
+  .pill-warn { background: var(--amber-bg); color: var(--amber); }
+  .pill-due { background: var(--red-bg); color: var(--red); }
+
+  .shower-btn {
+    font-family: 'DM Sans', sans-serif;
+    font-size: 13px;
+    padding: 7px 14px;
+    border-radius: 100px;
+    border: 0.5px solid var(--border-strong);
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    white-space: nowrap;
+    flex-shrink: 0;
+    transition: background 0.15s;
+  }
+
+  .shower-btn:hover { background: var(--bg); }
+  .shower-btn:active { transform: scale(0.97); }
+
+  /* Task cards */
+  .task-card {
+    background: var(--surface);
+    border: 0.5px solid var(--border);
+    border-radius: var(--radius);
+    padding: 14px 16px;
+    margin-bottom: 6px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    cursor: pointer;
+    transition: opacity 0.2s, transform 0.1s;
+  }
+
+  .task-card:active { transform: scale(0.985); }
+
+  .task-card.done-task { opacity: 0.38; }
+
+  .check-circle {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    border: 1.5px solid var(--border-strong);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: all 0.15s;
+  }
+
+  .check-circle.checked {
+    background: var(--green);
+    border-color: var(--green);
+  }
+
+  .checkmark {
+    display: none;
+    width: 5px;
+    height: 9px;
+    border: 2px solid #fff;
+    border-top: none;
+    border-left: none;
+    transform: rotate(45deg) translateY(-1px);
+  }
+
+  .check-circle.checked .checkmark { display: block; }
+
+  .task-text {
+    flex: 1;
+    font-size: 15px;
+    color: var(--text);
+    line-height: 1.4;
+  }
+
+  .done-task .task-text {
+    text-decoration: line-through;
+    color: var(--text-faint);
+  }
+
+  /* Summary bar */
+  .summary {
+    background: var(--surface);
+    border: 0.5px solid var(--border);
+    border-radius: var(--radius);
+    padding: 14px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 2rem;
+  }
+
+  .summary-label {
+    font-size: 13px;
+    color: var(--text-muted);
+  }
+
+  .summary-count {
+    font-family: 'DM Serif Display', serif;
+    font-size: 22px;
+    color: var(--text);
+    letter-spacing: -0.02em;
+  }
+
+  .summary-sub {
+    font-size: 11px;
+    color: var(--text-faint);
+  }
+
+  .divider {
+    width: 0.5px;
+    height: 32px;
+    background: var(--border);
+  }
+
+  .summary-item { text-align: center; }
+
+  /* Sync status */
+  .header-row {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .header-info { flex: 1; min-width: 0; }
+  .sync-status {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    color: var(--text-faint);
+    margin-top: 6px;
+    flex-shrink: 0;
+  }
+  .sync-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--text-faint);
+    transition: background 0.2s;
+  }
+  .sync-dot.ok { background: var(--green); }
+  .sync-dot.syncing { background: var(--amber); animation: pulse 1.2s ease-in-out infinite; }
+  .sync-dot.err { background: var(--red); }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+  .sync-btn {
+    font-family: 'DM Sans', sans-serif;
+    font-size: 11px;
+    padding: 5px 10px;
+    border-radius: 100px;
+    border: 0.5px solid var(--border-strong);
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .sync-btn:hover { background: var(--bg); }
+
+  /* Edit mode */
+  .edit-toggle-wrap {
+    text-align: center;
+    margin-top: 2rem;
+  }
+  .edit-toggle {
+    font-family: 'DM Sans', sans-serif;
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    background: transparent;
+    border: none;
+    color: var(--text-faint);
+    cursor: pointer;
+    padding: 8px 16px;
+    transition: color 0.15s;
+  }
+  .edit-toggle:hover { color: var(--text-muted); }
+  body.editing .edit-toggle { color: var(--text); }
+
+  body.editing .habit-btn,
+  body.editing .check-circle { display: none; }
+  body.editing .task-card { cursor: default; }
+  body.editing .task-card:active { transform: none; }
+
+  .delete-btn {
+    display: none;
+    background: transparent;
+    border: 0.5px solid var(--red);
+    color: var(--red);
+    border-radius: 100px;
+    padding: 6px 12px;
+    cursor: pointer;
+    font-size: 12px;
+    font-family: 'DM Sans', sans-serif;
+    flex-shrink: 0;
+    white-space: nowrap;
+  }
+  body.editing .delete-btn { display: inline-flex; align-items: center; }
+
+  .adder-card { display: none; margin-top: 6px; }
+  body.editing .adder-card { display: block; }
+  .adder-btn {
+    width: 100%;
+    background: transparent;
+    border: 1px dashed var(--border-strong);
+    border-radius: var(--radius);
+    padding: 14px 16px;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 14px;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .adder-btn:hover { background: var(--bg); }
+  .adder-input-card {
+    background: var(--surface);
+    border: 0.5px solid var(--border-strong);
+    border-radius: var(--radius);
+    padding: 14px 16px;
+  }
+  .adder-input-card input {
+    width: 100%;
+    border: none;
+    outline: none;
+    background: transparent;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 15px;
+    color: var(--text);
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="header-row">
+    <div class="header-info">
+      <div class="day-name" id="dayName"></div>
+      <div class="date-line" id="dateLine"></div>
+    </div>
+    <div class="sync-status" id="syncStatus"></div>
+  </div>
+</header>
+
+<div class="page">
+
+  <div class="section" id="summarySection">
+    <div class="summary" id="summaryBar">
+      <div class="summary-item">
+        <div class="summary-count" id="sumDone">0</div>
+        <div class="summary-sub">bugün yapıldı</div>
+      </div>
+      <div class="divider"></div>
+      <div class="summary-item">
+        <div class="summary-count" id="sumStreak">0</div>
+        <div class="summary-sub">en uzun seri</div>
+      </div>
+      <div class="divider"></div>
+      <div class="summary-item">
+        <div class="summary-count" id="sumWeek">0</div>
+        <div class="summary-sub">bu hafta</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-label">Alışkanlıklar</div>
+    <div id="habitsContainer"></div>
+  </div>
+
+  <div class="section">
+    <div class="section-label">Duş</div>
+    <div class="shower-card">
+      <div class="shower-info">
+        <div class="shower-title">Duş</div>
+        <div class="shower-sub" id="showerSub">Kayıt yok</div>
+      </div>
+      <span class="status-pill" id="showerPill"></span>
+      <button class="shower-btn" onclick="logShower()">Şimdi aldım</button>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-label">Yapmak İstediklerim</div>
+    <div id="tasksContainer"></div>
+  </div>
+
+  <div class="edit-toggle-wrap">
+    <button class="edit-toggle" id="editToggle" onclick="toggleEditMode()">Düzenle</button>
+  </div>
+
+</div>
+
+<script>
+const DEFAULT_HABITS = [
+  { id: 'muzik',    name: 'Müzik' },
+  { id: 'ders',     name: 'Ders çalışma' },
+  { id: 'spor',     name: 'Spor' },
+  { id: 'cilt',     name: 'Cilt bakımı' },
+  { id: 'dis',      name: 'Diş fırçalama' },
+  { id: 'uyku',     name: 'Uyku (8 saat)' },
+  { id: 'gunluk',   name: 'Günlük tutmak' },
+  { id: 'kitap',    name: 'Kitap okuma' }
+];
+
+const DEFAULT_TASKS = [
+  { id: 'saglik',  text: 'Yakınların sağlık takibi' },
+  { id: 'denklik', text: 'Denklik süreci' }
+];
+
+let HABITS = [];
+let TASKS = [];
+let editMode = false;
+
+const DRIVE_CLIENT_ID = 'YOUR_CLIENT_ID.apps.googleusercontent.com';
+const DRIVE_FILE_NAME = 'panel_v2.json';
+const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file';
+
+let driveToken = null;
+let driveFileId = null;
+let drivePushTimer = null;
+let driveTokenClient = null;
+
+function pad(n) { return String(n).padStart(2, '0'); }
+
+function todayKey() {
+  const d = new Date();
+  return d.getFullYear() + '-' + pad(d.getMonth()+1) + '-' + pad(d.getDate());
+}
+
+function dayKey(offset) {
+  const d = new Date();
+  d.setDate(d.getDate() - offset);
+  return d.getFullYear() + '-' + pad(d.getMonth()+1) + '-' + pad(d.getDate());
+}
+
+function migrate() {
+  let raw;
+  try { raw = localStorage.getItem('panel_v2'); } catch(e) { return; }
+  if (!raw) return;
+  let s;
+  try { s = JSON.parse(raw); } catch(e) { return; }
+  if (!s.habits) return;
+  const migrated = {};
+  let changed = false;
+  Object.keys(s.habits).forEach(k => {
+    const parts = k.split('-');
+    if (parts.length !== 3) { migrated[k] = s.habits[k]; return; }
+    const normalized = parts[0] + '-' + parts[1].padStart(2, '0') + '-' + parts[2].padStart(2, '0');
+    if (normalized !== k) changed = true;
+    migrated[normalized] = Object.assign({}, migrated[normalized] || {}, s.habits[k]);
+  });
+  if (changed) {
+    s.habits = migrated;
+    try { localStorage.setItem('panel_v2', JSON.stringify(s)); } catch(e) {}
+  }
+}
+
+function load() {
+  try { return JSON.parse(localStorage.getItem('panel_v2') || '{}'); }
+  catch(e) { return {}; }
+}
+
+function save(s) {
+  s._lastModified = Date.now();
+  try { localStorage.setItem('panel_v2', JSON.stringify(s)); } catch(e) {}
+  drivePush();
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+function loadLists() {
+  const s = load();
+  HABITS = Array.isArray(s.habitList) ? s.habitList : DEFAULT_HABITS.map(h => ({ ...h }));
+  TASKS = Array.isArray(s.taskList) ? s.taskList : DEFAULT_TASKS.map(t => ({ ...t }));
+  if (!Array.isArray(s.habitList) || !Array.isArray(s.taskList)) saveLists();
+}
+
+function saveLists() {
+  const s = load();
+  s.habitList = HABITS;
+  s.taskList = TASKS;
+  save(s);
+}
+
+function toggleEditMode() {
+  editMode = !editMode;
+  document.body.classList.toggle('editing', editMode);
+  document.getElementById('editToggle').textContent = editMode ? 'Bitti' : 'Düzenle';
+  renderHabits();
+  renderTasks();
+}
+
+function startAddHabit() {
+  const adder = document.getElementById('habitAdder');
+  adder.innerHTML = '<div class="adder-input-card"><input id="habitInput" placeholder="Alışkanlık adı..." /></div>';
+  const input = document.getElementById('habitInput');
+  input.focus();
+  input.onkeydown = (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); confirmAddHabit(); }
+    else if (e.key === 'Escape') { e.preventDefault(); renderHabits(); }
+  };
+  input.onblur = () => {
+    if (document.getElementById('habitInput') === input) renderHabits();
+  };
+}
+
+function confirmAddHabit() {
+  const input = document.getElementById('habitInput');
+  if (!input) return;
+  const val = input.value.trim();
+  if (!val) { renderHabits(); return; }
+  input.onblur = null;
+  HABITS.push({ id: 'h' + Date.now() + Math.floor(Math.random() * 1000), name: val });
+  saveLists();
+  renderHabits();
+}
+
+function deleteHabit(id) {
+  const h = HABITS.find(x => x.id === id);
+  if (!h) return;
+  if (!confirm('"' + h.name + '" silinsin mi?')) return;
+  HABITS = HABITS.filter(x => x.id !== id);
+  saveLists();
+  renderHabits();
+}
+
+function startAddTask() {
+  const adder = document.getElementById('taskAdder');
+  adder.innerHTML = '<div class="adder-input-card"><input id="taskInput" placeholder="Ne yapmak istiyorsun?" /></div>';
+  const input = document.getElementById('taskInput');
+  input.focus();
+  input.onkeydown = (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); confirmAddTask(); }
+    else if (e.key === 'Escape') { e.preventDefault(); renderTasks(); }
+  };
+  input.onblur = () => {
+    if (document.getElementById('taskInput') === input) renderTasks();
+  };
+}
+
+function confirmAddTask() {
+  const input = document.getElementById('taskInput');
+  if (!input) return;
+  const val = input.value.trim();
+  if (!val) { renderTasks(); return; }
+  input.onblur = null;
+  TASKS.push({ id: 't' + Date.now() + Math.floor(Math.random() * 1000), text: val });
+  saveLists();
+  renderTasks();
+}
+
+function deleteTask(id) {
+  const t = TASKS.find(x => x.id === id);
+  if (!t) return;
+  if (!confirm('"' + t.text + '" silinsin mi?')) return;
+  TASKS = TASKS.filter(x => x.id !== id);
+  saveLists();
+  renderTasks();
+}
+
+function isHabitDone(id) {
+  const s = load();
+  return !!(s.habits && s.habits[todayKey()] && s.habits[todayKey()][id]);
+}
+
+function toggleHabit(id) {
+  if (editMode) return;
+  const s = load();
+  if (!s.habits) s.habits = {};
+  if (!s.habits[todayKey()]) s.habits[todayKey()] = {};
+  s.habits[todayKey()][id] = !s.habits[todayKey()][id];
+  save(s);
+  renderHabits();
+  renderSummary();
+}
+
+function getStreak7(id) {
+  const s = load();
+  const dots = [];
+  for (let i = 6; i >= 0; i--) {
+    const k = dayKey(i);
+    const hit = !!(s.habits && s.habits[k] && s.habits[k][id]);
+    dots.push({ hit, today: i === 0 });
+  }
+  return dots;
+}
+
+function getLongestStreak(id) {
+  const s = load();
+  if (!s.habits) return 0;
+  const dates = Object.keys(s.habits)
+    .filter(k => s.habits[k][id])
+    .map(k => {
+      const [y, m, d] = k.split('-').map(Number);
+      return new Date(y, m - 1, d).getTime();
+    })
+    .sort((a, b) => a - b);
+  let best = 0, cur = 0, prev = null;
+  for (const t of dates) {
+    if (prev !== null && Math.round((t - prev) / 86400000) === 1) cur++;
+    else cur = 1;
+    if (cur > best) best = cur;
+    prev = t;
+  }
+  return best;
+}
+
+function renderHabits() {
+  const container = document.getElementById('habitsContainer');
+  container.innerHTML = '';
+  HABITS.forEach(h => {
+    const done = isHabitDone(h.id);
+    const dots = getStreak7(h.id);
+    const hitCount = dots.filter(d => d.hit).length;
+
+    const card = document.createElement('div');
+    card.className = 'habit-card';
+    card.innerHTML = `
+      <div class="habit-info">
+        <div class="habit-name">${escapeHtml(h.name)}</div>
+        <div class="streak-dots">
+          ${dots.map(d => `<div class="dot ${d.hit && d.today ? 'today-hit' : d.hit ? 'hit' : ''}"></div>`).join('')}
+          <span class="streak-count">${hitCount}/7</span>
+        </div>
+      </div>
+      <button class="habit-btn ${done ? 'done' : ''}" onclick="toggleHabit('${h.id}')">
+        ${done ? '✓ Yapıldı' : 'Yaptım'}
+      </button>
+      <button class="delete-btn" onclick="deleteHabit('${h.id}')">Sil</button>
+    `;
+    container.appendChild(card);
+  });
+  const adder = document.createElement('div');
+  adder.className = 'adder-card';
+  adder.id = 'habitAdder';
+  adder.innerHTML = '<button class="adder-btn" onclick="startAddHabit()">+ Yeni alışkanlık</button>';
+  container.appendChild(adder);
+}
+
+function logShower() {
+  const s = load();
+  s.shower = Date.now();
+  save(s);
+  renderShower();
+}
+
+function renderShower() {
+  const s = load();
+  const ts = s.shower;
+  const sub = document.getElementById('showerSub');
+  const pill = document.getElementById('showerPill');
+
+  if (!ts) {
+    sub.textContent = 'Henüz kayıt yok';
+    pill.textContent = '';
+    pill.className = 'status-pill';
+    return;
+  }
+
+  const hours = (Date.now() - ts) / 3600000;
+  const days = hours / 24;
+  const d = new Date(ts);
+  const dayName = d.toLocaleDateString('tr-TR', { weekday: 'long' });
+  const timeStr = d.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
+  const hoursAgo = Math.round(hours);
+  const daysAgo = Math.floor(days);
+
+  let timeLabel = '';
+  if (hoursAgo < 1) timeLabel = 'Az önce';
+  else if (hoursAgo < 24) timeLabel = hoursAgo + ' saat önce';
+  else if (daysAgo === 1) timeLabel = 'Dün, ' + timeStr;
+  else timeLabel = dayName + ', ' + timeStr;
+
+  sub.textContent = timeLabel;
+
+  if (days < 2) {
+    pill.textContent = 'Tamam';
+    pill.className = 'status-pill pill-ok';
+  } else if (days < 3) {
+    pill.textContent = 'Bugün al';
+    pill.className = 'status-pill pill-warn';
+  } else {
+    pill.textContent = 'Gecikti';
+    pill.className = 'status-pill pill-due';
+  }
+}
+
+function isTaskDone(id) {
+  const s = load();
+  return !!(s.tasks && s.tasks[id]);
+}
+
+function toggleTask(id) {
+  if (editMode) return;
+  const s = load();
+  if (!s.tasks) s.tasks = {};
+  s.tasks[id] = !s.tasks[id];
+  save(s);
+  renderTasks();
+}
+
+function renderTasks() {
+  const container = document.getElementById('tasksContainer');
+  container.innerHTML = '';
+  TASKS.forEach(t => {
+    const done = isTaskDone(t.id);
+    const card = document.createElement('div');
+    card.className = 'task-card' + (done ? ' done-task' : '');
+    card.onclick = (e) => {
+      if (editMode) return;
+      if (e.target.closest('.delete-btn')) return;
+      toggleTask(t.id);
+    };
+    card.innerHTML = `
+      <div class="check-circle ${done ? 'checked' : ''}">
+        <div class="checkmark"></div>
+      </div>
+      <div class="task-text">${escapeHtml(t.text)}</div>
+      <button class="delete-btn" onclick="event.stopPropagation(); deleteTask('${t.id}')">Sil</button>
+    `;
+    container.appendChild(card);
+  });
+  const adder = document.createElement('div');
+  adder.className = 'adder-card';
+  adder.id = 'taskAdder';
+  adder.innerHTML = '<button class="adder-btn" onclick="startAddTask()">+ Yeni</button>';
+  container.appendChild(adder);
+}
+
+function renderSummary() {
+  const s = load();
+  const today = todayKey();
+  const todayHabits = s.habits && s.habits[today] ? s.habits[today] : {};
+  const doneCount = Object.values(todayHabits).filter(Boolean).length;
+
+  let weekTotal = 0;
+  for (let i = 0; i < 7; i++) {
+    const k = dayKey(i);
+    const dayHabits = s.habits && s.habits[k] ? s.habits[k] : {};
+    weekTotal += Object.values(dayHabits).filter(Boolean).length;
+  }
+
+  let bestStreak = 0;
+  HABITS.forEach(h => {
+    const streak = getLongestStreak(h.id);
+    if (streak > bestStreak) bestStreak = streak;
+  });
+
+  document.getElementById('sumDone').textContent = doneCount;
+  document.getElementById('sumWeek').textContent = weekTotal;
+  document.getElementById('sumStreak').textContent = bestStreak;
+}
+
+function renderHeader() {
+  const d = new Date();
+  const days = ['Pazar','Pazartesi','Salı','Çarşamba','Perşembe','Cuma','Cumartesi'];
+  const months = ['Ocak','Şubat','Mart','Nisan','Mayıs','Haziran','Temmuz','Ağustos','Eylül','Ekim','Kasım','Aralık'];
+  document.getElementById('dayName').textContent = days[d.getDay()];
+  document.getElementById('dateLine').textContent = d.getDate() + ' ' + months[d.getMonth()] + ' ' + d.getFullYear();
+}
+
+function renderAll() {
+  loadLists();
+  renderHeader();
+  renderSummary();
+  renderHabits();
+  renderShower();
+  renderTasks();
+}
+
+function setSyncStatus(state) {
+  const el = document.getElementById('syncStatus');
+  if (!el) return;
+  if (state === 'hidden') { el.innerHTML = ''; el.style.display = 'none'; return; }
+  el.style.display = 'flex';
+  if (state === 'off') {
+    el.innerHTML = '<button class="sync-btn" onclick="driveConnect(false)">Drive\'a bağlan</button>';
+  } else if (state === 'err') {
+    el.innerHTML = '<span class="sync-dot err"></span><button class="sync-btn" onclick="driveConnect(false)">Tekrar bağlan</button>';
+  } else {
+    const label = state === 'syncing' ? 'Senkron...' : 'Drive';
+    el.innerHTML = `<span class="sync-dot ${state}"></span><span>${label}</span>`;
+  }
+}
+
+function driveConnect(silent) {
+  if (!window.google || !google.accounts || !google.accounts.oauth2) {
+    setTimeout(() => driveConnect(silent), 500);
+    return;
+  }
+  if (!driveTokenClient) {
+    driveTokenClient = google.accounts.oauth2.initTokenClient({
+      client_id: DRIVE_CLIENT_ID,
+      scope: DRIVE_SCOPE,
+      callback: async (resp) => {
+        if (resp && resp.access_token) {
+          driveToken = resp.access_token;
+          try { localStorage.setItem('panel_drive_enabled', '1'); } catch(e) {}
+          setSyncStatus('syncing');
+          try {
+            driveFileId = await driveFindOrCreate();
+            await drivePull();
+            await drivePushNow();
+            setSyncStatus('ok');
+          } catch(e) {
+            setSyncStatus('err');
+          }
+        } else {
+          setSyncStatus('err');
+        }
+      },
+      error_callback: () => setSyncStatus('err')
+    });
+  }
+  setSyncStatus('syncing');
+  driveTokenClient.requestAccessToken({ prompt: silent ? '' : '' });
+}
+
+async function driveFindOrCreate() {
+  const q = encodeURIComponent(`name='${DRIVE_FILE_NAME}' and trashed=false`);
+  const list = await fetch(
+    `https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id)&spaces=drive`,
+    { headers: { Authorization: `Bearer ${driveToken}` } }
+  ).then(r => r.json());
+  if (list.files && list.files.length > 0) return list.files[0].id;
+  const created = await fetch('https://www.googleapis.com/drive/v3/files', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${driveToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: DRIVE_FILE_NAME, mimeType: 'application/json' })
+  }).then(r => r.json());
+  return created.id;
+}
+
+async function drivePull() {
+  if (!driveToken || !driveFileId) return;
+  const resp = await fetch(
+    `https://www.googleapis.com/drive/v3/files/${driveFileId}?alt=media`,
+    { headers: { Authorization: `Bearer ${driveToken}` } }
+  );
+  if (resp.status === 404) return;
+  if (resp.status === 401) { driveToken = null; throw new Error('unauth'); }
+  if (!resp.ok) throw new Error('pull ' + resp.status);
+  const text = await resp.text();
+  if (!text) return;
+  let driveData;
+  try { driveData = JSON.parse(text); } catch(e) { return; }
+  const local = load();
+  const driveTs = driveData._lastModified || 0;
+  const localTs = local._lastModified || 0;
+  if (driveTs > localTs) {
+    try { localStorage.setItem('panel_v2', JSON.stringify(driveData)); } catch(e) {}
+    renderAll();
+  }
+}
+
+async function drivePushNow() {
+  if (!driveToken || !driveFileId) return;
+  const body = localStorage.getItem('panel_v2') || '{}';
+  const resp = await fetch(
+    `https://www.googleapis.com/upload/drive/v3/files/${driveFileId}?uploadType=media`,
+    {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${driveToken}`, 'Content-Type': 'application/json' },
+      body
+    }
+  );
+  if (resp.status === 401) { driveToken = null; throw new Error('unauth'); }
+  if (!resp.ok) throw new Error('push ' + resp.status);
+}
+
+function drivePush() {
+  if (!driveToken || !driveFileId) return;
+  clearTimeout(drivePushTimer);
+  setSyncStatus('syncing');
+  drivePushTimer = setTimeout(async () => {
+    try {
+      await drivePushNow();
+      setSyncStatus('ok');
+    } catch(e) {
+      if (e.message === 'unauth') {
+        driveConnect(true);
+      } else {
+        setSyncStatus('err');
+      }
+    }
+  }, 1500);
+}
+
+function init() {
+  migrate();
+  renderAll();
+
+  const driveConfigured = DRIVE_CLIENT_ID && !DRIVE_CLIENT_ID.startsWith('YOUR_');
+  if (driveConfigured) {
+    let previouslyEnabled = false;
+    try { previouslyEnabled = localStorage.getItem('panel_drive_enabled') === '1'; } catch(e) {}
+    if (previouslyEnabled) driveConnect(true);
+    else setSyncStatus('off');
+  } else {
+    setSyncStatus('hidden');
+  }
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) return;
+    renderAll();
+    if (driveToken && driveFileId) {
+      setSyncStatus('syncing');
+      drivePull().then(() => setSyncStatus('ok')).catch(() => setSyncStatus('err'));
+    }
+  });
+
+  setInterval(renderShower, 60000);
+}
+
+init();
+</script>
+</body>
+</html>
