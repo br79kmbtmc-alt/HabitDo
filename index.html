@@ -354,6 +354,43 @@
   }
   .sync-btn:hover { background: var(--bg); }
 
+  /* Water tracker */
+  .water-card {
+    background: var(--surface);
+    border: 0.5px solid var(--border);
+    border-radius: var(--radius);
+    padding: 14px 16px;
+  }
+  .water-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 10px;
+  }
+  .cup {
+    width: 26px;
+    height: 26px;
+    border-radius: 6px;
+    border: 1.5px solid var(--border-strong);
+    cursor: pointer;
+    transition: all 0.15s;
+    flex-shrink: 0;
+  }
+  .cup.filled { background: #5BA8C4; border-color: transparent; }
+  .cup:active { transform: scale(0.9); }
+  .water-count {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-left: 2px;
+    white-space: nowrap;
+  }
+
+  /* Editable grooming time */
+  .editable-time {
+    cursor: pointer;
+    text-decoration: underline dotted var(--text-faint);
+  }
+
   /* Edit mode */
   .edit-toggle-wrap {
     text-align: center;
@@ -465,14 +502,14 @@
   </div>
 
   <div class="section">
-    <div class="section-label">Duş</div>
-    <div class="shower-card">
-      <div class="shower-info">
-        <div class="shower-title">Duş</div>
-        <div class="shower-sub" id="showerSub">Kayıt yok</div>
-      </div>
-      <span class="status-pill" id="showerPill"></span>
-      <button class="shower-btn" onclick="logShower()">Şimdi aldım</button>
+    <div class="section-label">Bakım</div>
+    <div id="groomingContainer"></div>
+  </div>
+
+  <div class="section">
+    <div class="section-label">Su</div>
+    <div class="water-card">
+      <div id="waterCups" class="water-row"></div>
     </div>
   </div>
 
@@ -504,11 +541,21 @@ const DEFAULT_TASKS = [
   { id: 'denklik', text: 'Denklik süreci' }
 ];
 
+const DEFAULT_GROOMING = [
+  { id: 'dus',   name: 'Duş',          btnText: 'Şimdi aldım'  },
+  { id: 'sakal', name: 'Sakal tıraşı', btnText: 'Şimdi yaptım' },
+  { id: 'vucut', name: 'Vücut',         btnText: 'Şimdi yaptım' },
+  { id: 'sac',   name: 'Saç tıraşı',   btnText: 'Şimdi yaptım' },
+];
+
+const WATER_GOAL = 8;
+
 let HABITS = [];
 let TASKS = [];
+let GROOMING_LIST = [];
 let editMode = false;
 
-const DRIVE_CLIENT_ID = '636563505234-5jcjem80bu2e4jriqfsfgbfg7l40hlnn.apps.googleusercontent.com';
+const DRIVE_CLIENT_ID = 'YOUR_CLIENT_ID.apps.googleusercontent.com';
 const DRIVE_FILE_NAME = 'panel_v2.json';
 const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file';
 
@@ -550,6 +597,13 @@ function migrate() {
     s.habits = migrated;
     try { localStorage.setItem('panel_v2', JSON.stringify(s)); } catch(e) {}
   }
+  // shower → grooming migration
+  if (s.shower !== undefined) {
+    if (!s.grooming) s.grooming = {};
+    if (!s.grooming.dus) s.grooming.dus = s.shower;
+    delete s.shower;
+    try { localStorage.setItem('panel_v2', JSON.stringify(s)); } catch(e) {}
+  }
 }
 
 function load() {
@@ -569,15 +623,17 @@ function escapeHtml(s) {
 
 function loadLists() {
   const s = load();
-  HABITS = Array.isArray(s.habitList) ? s.habitList : DEFAULT_HABITS.map(h => ({ ...h }));
-  TASKS = Array.isArray(s.taskList) ? s.taskList : DEFAULT_TASKS.map(t => ({ ...t }));
-  if (!Array.isArray(s.habitList) || !Array.isArray(s.taskList)) saveLists();
+  HABITS       = Array.isArray(s.habitList)    ? s.habitList    : DEFAULT_HABITS.map(h => ({ ...h }));
+  TASKS        = Array.isArray(s.taskList)     ? s.taskList     : DEFAULT_TASKS.map(t => ({ ...t }));
+  GROOMING_LIST = Array.isArray(s.groomingList) ? s.groomingList : DEFAULT_GROOMING.map(g => ({ ...g }));
+  if (!Array.isArray(s.habitList) || !Array.isArray(s.taskList) || !Array.isArray(s.groomingList)) saveLists();
 }
 
 function saveLists() {
   const s = load();
-  s.habitList = HABITS;
-  s.taskList = TASKS;
+  s.habitList    = HABITS;
+  s.taskList     = TASKS;
+  s.groomingList = GROOMING_LIST;
   save(s);
 }
 
@@ -586,6 +642,7 @@ function toggleEditMode() {
   document.body.classList.toggle('editing', editMode);
   document.getElementById('editToggle').textContent = editMode ? 'Bitti' : 'Düzenle';
   renderHabits();
+  renderGrooming();
   renderTasks();
 }
 
@@ -736,52 +793,137 @@ function renderHabits() {
   container.appendChild(adder);
 }
 
-function logShower() {
+function logGrooming(id) {
   const s = load();
-  s.shower = Date.now();
+  if (!s.grooming) s.grooming = {};
+  s.grooming[id] = Date.now();
   save(s);
-  renderShower();
+  renderGrooming();
 }
 
-function renderShower() {
-  const s = load();
-  const ts = s.shower;
-  const sub = document.getElementById('showerSub');
-  const pill = document.getElementById('showerPill');
-
-  if (!ts) {
-    sub.textContent = 'Henüz kayıt yok';
-    pill.textContent = '';
-    pill.className = 'status-pill';
-    return;
-  }
-
+function groomingTimeLabel(ts) {
   const hours = (Date.now() - ts) / 3600000;
-  const days = hours / 24;
+  const daysAgo = Math.floor(hours / 24);
   const d = new Date(ts);
   const dayName = d.toLocaleDateString('tr-TR', { weekday: 'long' });
   const timeStr = d.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
-  const hoursAgo = Math.round(hours);
-  const daysAgo = Math.floor(days);
+  if (Math.round(hours) < 1) return 'Az önce';
+  if (hours < 24) return Math.round(hours) + ' saat önce';
+  if (daysAgo === 1) return 'Dün, ' + timeStr;
+  return dayName + ', ' + timeStr;
+}
 
-  let timeLabel = '';
-  if (hoursAgo < 1) timeLabel = 'Az önce';
-  else if (hoursAgo < 24) timeLabel = hoursAgo + ' saat önce';
-  else if (daysAgo === 1) timeLabel = 'Dün, ' + timeStr;
-  else timeLabel = dayName + ', ' + timeStr;
+function tsToDatetimeLocal(ts) {
+  const d = new Date(ts);
+  return d.getFullYear() + '-' + pad(d.getMonth()+1) + '-' + pad(d.getDate()) +
+         'T' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+}
 
-  sub.textContent = timeLabel;
+function editGroomingTime(id) {
+  const s = load();
+  const ts = s.grooming && s.grooming[id];
+  const el = document.getElementById('grooming-sub-' + id);
+  if (!el) return;
+  el.innerHTML = `<input type="datetime-local" value="${ts ? tsToDatetimeLocal(ts) : ''}"
+    style="border:none;outline:none;background:transparent;font-family:inherit;font-size:12px;color:var(--text-muted);width:100%;"
+    onchange="saveGroomingTime('${id}', this.value)"
+    onblur="renderGrooming()" />`;
+  el.querySelector('input').focus();
+}
 
-  if (days < 2) {
-    pill.textContent = 'Tamam';
-    pill.className = 'status-pill pill-ok';
-  } else if (days < 3) {
-    pill.textContent = 'Bugün al';
-    pill.className = 'status-pill pill-warn';
-  } else {
-    pill.textContent = 'Gecikti';
-    pill.className = 'status-pill pill-due';
+function saveGroomingTime(id, val) {
+  if (!val) { renderGrooming(); return; }
+  const ts = new Date(val).getTime();
+  if (isNaN(ts)) { renderGrooming(); return; }
+  const s = load();
+  if (!s.grooming) s.grooming = {};
+  s.grooming[id] = ts;
+  save(s);
+  renderGrooming();
+}
+
+function startAddGrooming() {
+  const adder = document.getElementById('groomingAdder');
+  adder.innerHTML = '<div class="adder-input-card"><input id="groomingInput" placeholder="Sayaç adı..." /></div>';
+  const input = document.getElementById('groomingInput');
+  input.focus();
+  input.onkeydown = (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); confirmAddGrooming(); }
+    else if (e.key === 'Escape') { e.preventDefault(); renderGrooming(); }
+  };
+  input.onblur = () => { if (document.getElementById('groomingInput') === input) renderGrooming(); };
+}
+
+function confirmAddGrooming() {
+  const input = document.getElementById('groomingInput');
+  if (!input) return;
+  const val = input.value.trim();
+  if (!val) { renderGrooming(); return; }
+  input.onblur = null;
+  GROOMING_LIST.push({ id: 'g' + Date.now() + Math.floor(Math.random() * 1000), name: val, btnText: 'Şimdi yaptım' });
+  saveLists();
+  renderGrooming();
+}
+
+function deleteGrooming(id) {
+  const g = GROOMING_LIST.find(x => x.id === id);
+  if (!g) return;
+  if (!confirm('"' + g.name + '" silinsin mi?')) return;
+  GROOMING_LIST = GROOMING_LIST.filter(x => x.id !== id);
+  saveLists();
+  renderGrooming();
+}
+
+function renderGrooming() {
+  const s = load();
+  const container = document.getElementById('groomingContainer');
+  container.innerHTML = '';
+  GROOMING_LIST.forEach(g => {
+    const ts = s.grooming && s.grooming[g.id];
+    const subText = ts ? groomingTimeLabel(ts) : 'Henüz kayıt yok';
+    const card = document.createElement('div');
+    card.className = 'shower-card';
+    card.style.marginBottom = '6px';
+    card.innerHTML = `
+      <div class="shower-info">
+        <div class="shower-title">${escapeHtml(g.name)}</div>
+        <div class="shower-sub${ts ? ' editable-time' : ''}"
+             id="grooming-sub-${g.id}"
+             ${ts ? `onclick="editGroomingTime('${g.id}')"` : ''}
+        >${escapeHtml(subText)}</div>
+      </div>
+      <button class="shower-btn" onclick="logGrooming('${g.id}')">${escapeHtml(g.btnText)}</button>
+      <button class="delete-btn" onclick="deleteGrooming('${g.id}')">Sil</button>
+    `;
+    container.appendChild(card);
+  });
+  const adder = document.createElement('div');
+  adder.className = 'adder-card';
+  adder.id = 'groomingAdder';
+  adder.innerHTML = '<button class="adder-btn" onclick="startAddGrooming()">+ Yeni sayaç</button>';
+  container.appendChild(adder);
+}
+
+function setWater(count) {
+  const s = load();
+  if (!s.water) s.water = {};
+  s.water[todayKey()] = count;
+  save(s);
+  renderWater();
+}
+
+function renderWater() {
+  const s = load();
+  const count = (s.water && s.water[todayKey()]) || 0;
+  const container = document.getElementById('waterCups');
+  let html = '';
+  for (let i = 0; i < WATER_GOAL; i++) {
+    const filled = i < count;
+    const next = filled ? i : i + 1;
+    html += `<div class="cup${filled ? ' filled' : ''}" onclick="setWater(${next})"></div>`;
   }
+  html += `<span class="water-count">${count}/${WATER_GOAL} bardak</span>`;
+  container.innerHTML = html;
 }
 
 function isTaskDone(id) {
@@ -863,7 +1005,8 @@ function renderAll() {
   renderHeader();
   renderSummary();
   renderHabits();
-  renderShower();
+  renderGrooming();
+  renderWater();
   renderTasks();
 }
 
@@ -1008,7 +1151,7 @@ function init() {
     }
   });
 
-  setInterval(renderShower, 60000);
+  setInterval(renderGrooming, 60000);
 }
 
 init();
