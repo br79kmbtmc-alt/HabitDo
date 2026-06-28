@@ -391,6 +391,55 @@
     text-decoration: underline dotted var(--text-faint);
   }
 
+  /* Quick time picker */
+  .quick-time-picker { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
+  .quick-time-btn {
+    font-family: 'DM Sans', sans-serif;
+    font-size: 11px;
+    padding: 4px 9px;
+    border-radius: 100px;
+    border: 0.5px solid var(--border-strong);
+    background: var(--bg);
+    color: var(--text-muted);
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .quick-time-btn:active { opacity: 0.6; }
+
+  /* Grooming overdue */
+  .grooming-overdue { border-left: 2.5px solid var(--red) !important; }
+  .grooming-time-overdue { color: var(--red) !important; font-weight: 500; }
+
+  /* Warn threshold config (edit mode) */
+  .warn-config { display: flex; align-items: center; gap: 5px; margin-top: 6px; }
+  .warn-label { font-size: 11px; color: var(--text-faint); }
+  .warn-input {
+    width: 52px;
+    border: 0.5px solid var(--border-strong);
+    border-radius: 4px;
+    background: var(--bg);
+    color: var(--text-muted);
+    font-size: 11px;
+    font-family: 'DM Sans', sans-serif;
+    padding: 2px 4px;
+    text-align: center;
+  }
+
+  /* Completed tasks section */
+  .done-toggle {
+    font-family: 'DM Sans', sans-serif;
+    font-size: 12px;
+    color: var(--text-faint);
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    padding: 10px 0 4px;
+    width: 100%;
+    text-align: left;
+    display: block;
+  }
+  .done-toggle:hover { color: var(--text-muted); }
+
   /* Edit mode */
   .edit-toggle-wrap {
     text-align: center;
@@ -542,10 +591,10 @@ const DEFAULT_TASKS = [
 ];
 
 const DEFAULT_GROOMING = [
-  { id: 'dus',   name: 'Duş',          btnText: 'Şimdi aldım'  },
-  { id: 'sakal', name: 'Sakal tıraşı', btnText: 'Şimdi yaptım' },
-  { id: 'vucut', name: 'Vücut',         btnText: 'Şimdi yaptım' },
-  { id: 'sac',   name: 'Saç tıraşı',   btnText: 'Şimdi yaptım' },
+  { id: 'dus',   name: 'Duş',          btnText: 'Şimdi aldım',  warnAfterHours: 48  },
+  { id: 'sakal', name: 'Sakal tıraşı', btnText: 'Şimdi yaptım', warnAfterHours: 48  },
+  { id: 'vucut', name: 'Vücut',         btnText: 'Şimdi yaptım', warnAfterHours: 168 },
+  { id: 'sac',   name: 'Saç tıraşı',   btnText: 'Şimdi yaptım', warnAfterHours: 504 },
 ];
 
 const WATER_GOAL = 8;
@@ -554,6 +603,7 @@ let HABITS = [];
 let TASKS = [];
 let GROOMING_LIST = [];
 let editMode = false;
+let doneOpen = false;
 
 const DRIVE_CLIENT_ID = '636563505234-5jcjem80bu2e4jriqfsfgbfg7l40hlnn.apps.googleusercontent.com';
 const DRIVE_FILE_NAME = 'panel_v2.json';
@@ -625,7 +675,8 @@ function loadLists() {
   const s = load();
   HABITS       = Array.isArray(s.habitList)    ? s.habitList    : DEFAULT_HABITS.map(h => ({ ...h }));
   TASKS        = Array.isArray(s.taskList)     ? s.taskList     : DEFAULT_TASKS.map(t => ({ ...t }));
-  GROOMING_LIST = Array.isArray(s.groomingList) ? s.groomingList : DEFAULT_GROOMING.map(g => ({ ...g }));
+  GROOMING_LIST = (Array.isArray(s.groomingList) ? s.groomingList : DEFAULT_GROOMING.map(g => ({ ...g })))
+    .map(g => ({ warnAfterHours: 48, ...g }));
   if (!Array.isArray(s.habitList) || !Array.isArray(s.taskList) || !Array.isArray(s.groomingList)) saveLists();
 }
 
@@ -805,12 +856,13 @@ function groomingTimeLabel(ts) {
   const hours = (Date.now() - ts) / 3600000;
   const daysAgo = Math.floor(hours / 24);
   const d = new Date(ts);
-  const dayName = d.toLocaleDateString('tr-TR', { weekday: 'long' });
   const timeStr = d.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
+  const dateStr = d.toLocaleDateString('tr-TR', { day: 'numeric', month: 'long' });
   if (Math.round(hours) < 1) return 'Az önce';
   if (hours < 24) return Math.round(hours) + ' saat önce';
   if (daysAgo === 1) return 'Dün, ' + timeStr;
-  return dayName + ', ' + timeStr;
+  if (daysAgo < 7) return daysAgo + ' gün önce';
+  return daysAgo + ' gün önce · ' + dateStr;
 }
 
 function tsToDatetimeLocal(ts) {
@@ -820,14 +872,50 @@ function tsToDatetimeLocal(ts) {
 }
 
 function editGroomingTime(id) {
-  const s = load();
-  const ts = s.grooming && s.grooming[id];
   const el = document.getElementById('grooming-sub-' + id);
   if (!el) return;
+  const opts = [
+    ['Az önce',     '0'],
+    ['1 saat önce', '3600000'],
+    ['2 saat önce', '7200000'],
+    ['4 saat önce', '14400000'],
+    ['Dün sabah',   'yesterday-morning'],
+    ['Dün akşam',   'yesterday-evening'],
+    ['2 gün önce',  '172800000'],
+  ];
+  const btns = opts.map(([label, val]) =>
+    `<button class="quick-time-btn" onclick="applyQuickTime('${id}','${val}')">${label}</button>`
+  ).join('');
+  el.innerHTML = `<div class="quick-time-picker">${btns}
+    <button class="quick-time-btn" onclick="showCustomGroomingTime('${id}')">Özel...</button>
+    <button class="quick-time-btn" onclick="renderGrooming()" style="opacity:0.5">✕</button>
+  </div>`;
+}
+
+function applyQuickTime(id, offsetStr) {
+  let ts;
+  if (offsetStr === 'yesterday-morning') {
+    const d = new Date(); d.setDate(d.getDate() - 1); d.setHours(8, 0, 0, 0); ts = d.getTime();
+  } else if (offsetStr === 'yesterday-evening') {
+    const d = new Date(); d.setDate(d.getDate() - 1); d.setHours(20, 0, 0, 0); ts = d.getTime();
+  } else {
+    ts = Date.now() - Number(offsetStr);
+  }
+  const s = load();
+  if (!s.grooming) s.grooming = {};
+  s.grooming[id] = ts;
+  save(s);
+  renderGrooming();
+}
+
+function showCustomGroomingTime(id) {
+  const el = document.getElementById('grooming-sub-' + id);
+  if (!el) return;
+  const s = load();
+  const ts = s.grooming && s.grooming[id];
   el.innerHTML = `<input type="datetime-local" value="${ts ? tsToDatetimeLocal(ts) : ''}"
     style="border:none;outline:none;background:transparent;font-family:inherit;font-size:12px;color:var(--text-muted);width:100%;"
-    onchange="saveGroomingTime('${id}', this.value)"
-    onblur="renderGrooming()" />`;
+    onchange="saveGroomingTime('${id}', this.value)" onblur="renderGrooming()" />`;
   el.querySelector('input').focus();
 }
 
@@ -840,6 +928,15 @@ function saveGroomingTime(id, val) {
   s.grooming[id] = ts;
   save(s);
   renderGrooming();
+}
+
+function updateWarnHours(id, val) {
+  const hours = parseInt(val);
+  if (isNaN(hours) || hours < 1) return;
+  const g = GROOMING_LIST.find(x => x.id === id);
+  if (!g) return;
+  g.warnAfterHours = hours;
+  saveLists();
 }
 
 function startAddGrooming() {
@@ -860,7 +957,7 @@ function confirmAddGrooming() {
   const val = input.value.trim();
   if (!val) { renderGrooming(); return; }
   input.onblur = null;
-  GROOMING_LIST.push({ id: 'g' + Date.now() + Math.floor(Math.random() * 1000), name: val, btnText: 'Şimdi yaptım' });
+  GROOMING_LIST.push({ id: 'g' + Date.now() + Math.floor(Math.random() * 1000), name: val, btnText: 'Şimdi yaptım', warnAfterHours: 48 });
   saveLists();
   renderGrooming();
 }
@@ -881,16 +978,25 @@ function renderGrooming() {
   GROOMING_LIST.forEach(g => {
     const ts = s.grooming && s.grooming[g.id];
     const subText = ts ? groomingTimeLabel(ts) : 'Henüz kayıt yok';
+    const overdue = ts && ((Date.now() - ts) / 3600000) > (g.warnAfterHours || 48);
+    const warnConfig = editMode ? `
+      <div class="warn-config">
+        <span class="warn-label">⏰</span>
+        <input type="number" min="1" value="${g.warnAfterHours || 48}" class="warn-input"
+          onchange="updateWarnHours('${g.id}', this.value)" />
+        <span class="warn-label">saatte uyar</span>
+      </div>` : '';
     const card = document.createElement('div');
-    card.className = 'shower-card';
+    card.className = 'shower-card' + (overdue ? ' grooming-overdue' : '');
     card.style.marginBottom = '6px';
     card.innerHTML = `
       <div class="shower-info">
         <div class="shower-title">${escapeHtml(g.name)}</div>
-        <div class="shower-sub${ts ? ' editable-time' : ''}"
+        <div class="shower-sub${ts ? ' editable-time' : ''}${overdue ? ' grooming-time-overdue' : ''}"
              id="grooming-sub-${g.id}"
              ${ts ? `onclick="editGroomingTime('${g.id}')"` : ''}
         >${escapeHtml(subText)}</div>
+        ${warnConfig}
       </div>
       <button class="shower-btn" onclick="logGrooming('${g.id}')">${escapeHtml(g.btnText)}</button>
       <button class="delete-btn" onclick="deleteGrooming('${g.id}')">Sil</button>
@@ -940,32 +1046,54 @@ function toggleTask(id) {
   renderTasks();
 }
 
+function makeTaskCard(t, done) {
+  const card = document.createElement('div');
+  card.className = 'task-card' + (done ? ' done-task' : '');
+  card.onclick = (e) => {
+    if (editMode) return;
+    if (e.target.closest('.delete-btn')) return;
+    toggleTask(t.id);
+  };
+  card.innerHTML = `
+    <div class="check-circle ${done ? 'checked' : ''}"><div class="checkmark"></div></div>
+    <div class="task-text">${escapeHtml(t.text)}</div>
+    <button class="delete-btn" onclick="event.stopPropagation(); deleteTask('${t.id}')">Sil</button>
+  `;
+  return card;
+}
+
+function toggleDoneSection() {
+  doneOpen = !doneOpen;
+  renderTasks();
+}
+
 function renderTasks() {
   const container = document.getElementById('tasksContainer');
   container.innerHTML = '';
-  TASKS.forEach(t => {
-    const done = isTaskDone(t.id);
-    const card = document.createElement('div');
-    card.className = 'task-card' + (done ? ' done-task' : '');
-    card.onclick = (e) => {
-      if (editMode) return;
-      if (e.target.closest('.delete-btn')) return;
-      toggleTask(t.id);
-    };
-    card.innerHTML = `
-      <div class="check-circle ${done ? 'checked' : ''}">
-        <div class="checkmark"></div>
-      </div>
-      <div class="task-text">${escapeHtml(t.text)}</div>
-      <button class="delete-btn" onclick="event.stopPropagation(); deleteTask('${t.id}')">Sil</button>
-    `;
-    container.appendChild(card);
-  });
+
+  const active = TASKS.filter(t => !isTaskDone(t.id));
+  const done   = TASKS.filter(t =>  isTaskDone(t.id));
+
+  active.forEach(t => container.appendChild(makeTaskCard(t, false)));
+
   const adder = document.createElement('div');
   adder.className = 'adder-card';
   adder.id = 'taskAdder';
   adder.innerHTML = '<button class="adder-btn" onclick="startAddTask()">+ Yeni</button>';
   container.appendChild(adder);
+
+  if (done.length > 0) {
+    const arrow = doneOpen ? '▾' : '▸';
+    const toggle = document.createElement('button');
+    toggle.className = 'done-toggle';
+    toggle.textContent = arrow + ' Tamamlananlar (' + done.length + ')';
+    toggle.onclick = toggleDoneSection;
+    container.appendChild(toggle);
+
+    if (doneOpen) {
+      done.forEach(t => container.appendChild(makeTaskCard(t, true)));
+    }
+  }
 }
 
 function renderSummary() {
