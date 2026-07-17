@@ -5,7 +5,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 <title>Günlük Panel</title>
 <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
-<script src="https://accounts.google.com/gsi/client" async defer></script>
 <style>
   :root {
     --bg: #F7F5F0;
@@ -605,14 +604,8 @@ let GROOMING_LIST = [];
 let editMode = false;
 let doneOpen = false;
 
-const DRIVE_CLIENT_ID = '636563505234-5jcjem80bu2e4jriqfsfgbfg7l40hlnn.apps.googleusercontent.com';
-const DRIVE_FILE_NAME = 'panel_v2.json';
-const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file';
-
-let driveToken = null;
-let driveFileId = null;
-let drivePushTimer = null;
-let driveTokenClient = null;
+const SYNC_FILE = 'panel_v2.json';
+let syncPushTimer = null;
 
 function pad(n) { return String(n).padStart(2, '0'); }
 
@@ -664,7 +657,7 @@ function load() {
 function save(s) {
   s._lastModified = Date.now();
   try { localStorage.setItem('panel_v2', JSON.stringify(s)); } catch(e) {}
-  drivePush();
+  syncPush();
 }
 
 function recordDeletion(id) {
@@ -1159,62 +1152,83 @@ function setSyncStatus(state, detail) {
   if (state === 'hidden') { el.innerHTML = ''; el.style.display = 'none'; return; }
   el.style.display = 'flex';
   if (state === 'off') {
-    el.innerHTML = '<button class="sync-btn" onclick="driveConnect(false)">Drive\'a bağlan</button>';
+    el.innerHTML = '<button class="sync-btn" onclick="promptGistToken()">Senkronu kur</button>';
   } else if (state === 'err') {
     const d = detail ? ` <span style="color:var(--text-faint);font-size:9px;">(${escapeHtml(String(detail))})</span>` : '';
-    el.innerHTML = '<span class="sync-dot err"></span><button class="sync-btn" onclick="driveConnect(false)">Tekrar bağlan</button>' + d;
+    el.innerHTML = '<span class="sync-dot err"></span><button class="sync-btn" onclick="gistConnect()">Tekrar dene</button>' + d;
   } else {
-    const label = state === 'syncing' ? 'Senkron...' : 'Drive';
+    const label = state === 'syncing' ? 'Senkron...' : 'Senkron';
     el.innerHTML = `<span class="sync-dot ${state}"></span><span>${label}</span>`;
   }
 }
 
-function driveConnect(silent) {
-  if (!window.google || !google.accounts || !google.accounts.oauth2) {
-    setTimeout(() => driveConnect(silent), 500);
-    return;
-  }
-  if (!driveTokenClient) {
-    driveTokenClient = google.accounts.oauth2.initTokenClient({
-      client_id: DRIVE_CLIENT_ID,
-      scope: DRIVE_SCOPE,
-      callback: async (resp) => {
-        if (resp && resp.access_token) {
-          driveToken = resp.access_token;
-          try { localStorage.setItem('panel_drive_enabled', '1'); } catch(e) {}
-          setSyncStatus('syncing');
-          try {
-            driveFileId = await driveFindOrCreate();
-            await driveSync();
-            setSyncStatus('ok');
-          } catch(e) {
-            setSyncStatus('err', (e && e.message) || 'sync hatası');
-          }
-        } else {
-          setSyncStatus('err', 'token gelmedi');
-        }
-      },
-      error_callback: (err) => setSyncStatus('err', (err && (err.type || err.message)) || 'oauth')
-    });
-  }
-  setSyncStatus('syncing');
-  // Sessiz (otomatik) denemede prompt boş; manuel "Tekrar bağlan"da onay ekranını zorla
-  driveTokenClient.requestAccessToken({ prompt: silent ? '' : 'consent' });
+function gistToken() { try { return localStorage.getItem('panel_gist_token') || ''; } catch(e) { return ''; } }
+function gistId() { try { return localStorage.getItem('panel_gist_id') || ''; } catch(e) { return ''; } }
+
+function promptGistToken() {
+  const el = document.getElementById('syncStatus');
+  if (!el) return;
+  el.style.display = 'flex';
+  el.innerHTML = `<input id="gistTokenInput" type="text" placeholder="GitHub token yapıştır"
+      style="border:0.5px solid var(--border-strong);border-radius:6px;background:var(--bg);
+             color:var(--text);font-size:11px;font-family:inherit;padding:4px 8px;width:150px;" />`;
+  const input = document.getElementById('gistTokenInput');
+  input.focus();
+  input.onkeydown = (e) => {
+    if (e.key === 'Enter') {
+      const val = input.value.trim();
+      if (val) {
+        try { localStorage.setItem('panel_gist_token', val); } catch(e) {}
+        gistConnect();
+      }
+    } else if (e.key === 'Escape') {
+      setSyncStatus(gistToken() ? 'ok' : 'off');
+    }
+  };
 }
 
-async function driveFindOrCreate() {
-  const q = encodeURIComponent(`name='${DRIVE_FILE_NAME}' and trashed=false`);
-  const list = await fetch(
-    `https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id)&spaces=drive`,
-    { headers: { Authorization: `Bearer ${driveToken}` } }
-  ).then(r => r.json());
-  if (list.files && list.files.length > 0) return list.files[0].id;
-  const created = await fetch('https://www.googleapis.com/drive/v3/files', {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${driveToken}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name: DRIVE_FILE_NAME, mimeType: 'application/json' })
-  }).then(r => r.json());
-  return created.id;
+function gistConnect() {
+  if (!gistToken()) { promptGistToken(); return; }
+  setSyncStatus('syncing');
+  gistSync().then(() => setSyncStatus('ok')).catch((e) => {
+    setSyncStatus('err', (e && e.message) || 'hata');
+  });
+}
+
+async function gistApi(method, path, body) {
+  return fetch('https://api.github.com' + path, {
+    method,
+    headers: Object.assign(
+      { 'Authorization': 'token ' + gistToken(), 'Accept': 'application/vnd.github+json' },
+      body ? { 'Content-Type': 'application/json' } : {}
+    ),
+    body: body ? JSON.stringify(body) : undefined
+  });
+}
+
+async function gistFindOrCreate() {
+  let id = gistId();
+  if (id) return id;
+  const listResp = await gistApi('GET', '/gists?per_page=100');
+  if (listResp.status === 401) throw new Error('token geçersiz');
+  if (!listResp.ok) throw new Error('list ' + listResp.status);
+  const gists = await listResp.json();
+  const found = Array.isArray(gists) ? gists.find(g => g.files && g.files[SYNC_FILE]) : null;
+  if (found) {
+    id = found.id;
+  } else {
+    const createResp = await gistApi('POST', '/gists', {
+      description: 'HabitDo panel sync',
+      public: false,
+      files: { [SYNC_FILE]: { content: '{}' } }
+    });
+    if (createResp.status === 401) throw new Error('token geçersiz');
+    if (!createResp.ok) throw new Error('create ' + createResp.status);
+    const created = await createResp.json();
+    id = created.id;
+  }
+  try { localStorage.setItem('panel_gist_id', id); } catch(e) {}
+  return id;
 }
 
 function mergeMap(a, b, combine) {
@@ -1261,52 +1275,36 @@ function mergeState(local, drive) {
 }
 
 // pull → merge → push: her senkronda iki tarafı birleştirir
-async function driveSync() {
-  if (!driveToken || !driveFileId) return;
-  const resp = await fetch(
-    `https://www.googleapis.com/drive/v3/files/${driveFileId}?alt=media`,
-    { headers: { Authorization: `Bearer ${driveToken}` } }
-  );
-  if (resp.status === 401) { driveToken = null; throw new Error('unauth'); }
-  let driveData = {};
-  if (resp.ok) {
-    const text = await resp.text();
-    if (text) { try { driveData = JSON.parse(text); } catch(e) { driveData = {}; } }
-  } else if (resp.status !== 404) {
-    throw new Error('pull ' + resp.status);
-  }
+async function gistSync() {
+  if (!gistToken()) return;
+  const id = await gistFindOrCreate();
+  const getResp = await gistApi('GET', '/gists/' + id);
+  if (getResp.status === 401) throw new Error('token geçersiz');
+  if (!getResp.ok) throw new Error('pull ' + getResp.status);
+  const gist = await getResp.json();
+  let remote = {};
+  const file = gist.files && gist.files[SYNC_FILE];
+  if (file && file.content) { try { remote = JSON.parse(file.content); } catch(e) { remote = {}; } }
   const local = load();
-  const merged = mergeState(local, driveData);
+  const merged = mergeState(local, remote);
   merged._lastModified = Date.now();
   try { localStorage.setItem('panel_v2', JSON.stringify(merged)); } catch(e) {}
   renderAll();
-  const put = await fetch(
-    `https://www.googleapis.com/upload/drive/v3/files/${driveFileId}?uploadType=media`,
-    {
-      method: 'PATCH',
-      headers: { Authorization: `Bearer ${driveToken}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify(merged)
-    }
-  );
-  if (put.status === 401) { driveToken = null; throw new Error('unauth'); }
-  if (!put.ok) throw new Error('push ' + put.status);
+  const patchResp = await gistApi('PATCH', '/gists/' + id, {
+    files: { [SYNC_FILE]: { content: JSON.stringify(merged) } }
+  });
+  if (patchResp.status === 401) throw new Error('token geçersiz');
+  if (!patchResp.ok) throw new Error('push ' + patchResp.status);
 }
 
-function drivePush() {
-  if (!driveToken || !driveFileId) return;
-  clearTimeout(drivePushTimer);
+function syncPush() {
+  if (!gistToken()) return;
+  clearTimeout(syncPushTimer);
   setSyncStatus('syncing');
-  drivePushTimer = setTimeout(async () => {
-    try {
-      await driveSync();
-      setSyncStatus('ok');
-    } catch(e) {
-      if (e.message === 'unauth') {
-        driveConnect(true);
-      } else {
-        setSyncStatus('err');
-      }
-    }
+  syncPushTimer = setTimeout(() => {
+    gistSync().then(() => setSyncStatus('ok')).catch((e) => {
+      setSyncStatus('err', (e && e.message) || 'hata');
+    });
   }, 1500);
 }
 
@@ -1314,23 +1312,19 @@ function init() {
   migrate();
   renderAll();
 
-  const driveConfigured = DRIVE_CLIENT_ID && !DRIVE_CLIENT_ID.startsWith('YOUR_');
-  if (driveConfigured) {
-    let previouslyEnabled = false;
-    try { previouslyEnabled = localStorage.getItem('panel_drive_enabled') === '1'; } catch(e) {}
-    if (previouslyEnabled) driveConnect(true);
-    else setSyncStatus('off');
+  if (gistToken()) {
+    gistConnect();
   } else {
-    setSyncStatus('hidden');
+    setSyncStatus('off');
   }
 
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) return;
     renderAll();
-    if (driveToken && driveFileId) {
+    if (gistToken()) {
       setSyncStatus('syncing');
-      driveSync().then(() => setSyncStatus('ok')).catch((e) => {
-        if (e && e.message === 'unauth') driveConnect(true); else setSyncStatus('err');
+      gistSync().then(() => setSyncStatus('ok')).catch((e) => {
+        setSyncStatus('err', (e && e.message) || 'hata');
       });
     }
   });
