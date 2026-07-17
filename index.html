@@ -667,6 +667,13 @@ function save(s) {
   drivePush();
 }
 
+function recordDeletion(id) {
+  const s = load();
+  if (!s.deletedIds) s.deletedIds = {};
+  s.deletedIds[id] = Date.now();
+  save(s);
+}
+
 function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
@@ -727,6 +734,7 @@ function deleteHabit(id) {
   if (!h) return;
   if (!confirm('"' + h.name + '" silinsin mi?')) return;
   HABITS = HABITS.filter(x => x.id !== id);
+  recordDeletion(id);
   saveLists();
   renderHabits();
 }
@@ -761,6 +769,7 @@ function deleteTask(id) {
   if (!t) return;
   if (!confirm('"' + t.text + '" silinsin mi?')) return;
   TASKS = TASKS.filter(x => x.id !== id);
+  recordDeletion(id);
   saveLists();
   renderTasks();
 }
@@ -972,6 +981,7 @@ function deleteGrooming(id) {
   if (!g) return;
   if (!confirm('"' + g.name + '" silinsin mi?')) return;
   GROOMING_LIST = GROOMING_LIST.filter(x => x.id !== id);
+  recordDeletion(id);
   saveLists();
   renderGrooming();
 }
@@ -1174,8 +1184,7 @@ function driveConnect(silent) {
           setSyncStatus('syncing');
           try {
             driveFileId = await driveFindOrCreate();
-            await drivePull();
-            await drivePushNow();
+            await driveSync();
             setSyncStatus('ok');
           } catch(e) {
             setSyncStatus('err');
@@ -1206,41 +1215,79 @@ async function driveFindOrCreate() {
   return created.id;
 }
 
-async function drivePull() {
+function mergeMap(a, b, combine) {
+  const out = {};
+  const keys = new Set([...Object.keys(a || {}), ...Object.keys(b || {})]);
+  keys.forEach(k => { out[k] = combine((a || {})[k], (b || {})[k]); });
+  return out;
+}
+
+function mergeList(a, b, deleted) {
+  const result = [];
+  const seen = new Set();
+  const add = (arr) => (arr || []).forEach(item => {
+    if (!item || !item.id) return;
+    if (deleted && deleted[item.id]) return;
+    if (seen.has(item.id)) return;
+    seen.add(item.id);
+    result.push(item);
+  });
+  add(a); add(b);
+  return result;
+}
+
+// İki cihazın verisini kaybetmeden birleştirir (last-write-wins yerine union)
+function mergeState(local, drive) {
+  local = local || {};
+  drive = drive || {};
+  const out = Object.assign({}, drive, local); // bilinmeyen/skaler alanlar için local öncelikli
+  const deleted = Object.assign({}, drive.deletedIds, local.deletedIds);
+  out.deletedIds = deleted;
+  // habits: gün -> {habitId: bool}, ikisinden birinde yapıldıysa yapıldı
+  out.habits = mergeMap(local.habits, drive.habits, (ld, dd) => mergeMap(ld, dd, (a, b) => !!(a || b)));
+  // grooming: id -> timestamp, en yeni kazanır
+  out.grooming = mergeMap(local.grooming, drive.grooming, (a, b) => Math.max(a || 0, b || 0));
+  // water: gün -> bardak sayısı, en yüksek kazanır
+  out.water = mergeMap(local.water, drive.water, (a, b) => Math.max(a || 0, b || 0));
+  // tasks: id -> bool, ikisinden birinde işaretliyse işaretli
+  out.tasks = mergeMap(local.tasks, drive.tasks, (a, b) => !!(a || b));
+  // listeler: id bazında birleşim, silinenler hariç
+  if (local.habitList || drive.habitList) out.habitList = mergeList(local.habitList, drive.habitList, deleted);
+  if (local.taskList || drive.taskList) out.taskList = mergeList(local.taskList, drive.taskList, deleted);
+  if (local.groomingList || drive.groomingList) out.groomingList = mergeList(local.groomingList, drive.groomingList, deleted);
+  return out;
+}
+
+// pull → merge → push: her senkronda iki tarafı birleştirir
+async function driveSync() {
   if (!driveToken || !driveFileId) return;
   const resp = await fetch(
     `https://www.googleapis.com/drive/v3/files/${driveFileId}?alt=media`,
     { headers: { Authorization: `Bearer ${driveToken}` } }
   );
-  if (resp.status === 404) return;
   if (resp.status === 401) { driveToken = null; throw new Error('unauth'); }
-  if (!resp.ok) throw new Error('pull ' + resp.status);
-  const text = await resp.text();
-  if (!text) return;
-  let driveData;
-  try { driveData = JSON.parse(text); } catch(e) { return; }
-  const local = load();
-  const driveTs = driveData._lastModified || 0;
-  const localTs = local._lastModified || 0;
-  if (driveTs > localTs) {
-    try { localStorage.setItem('panel_v2', JSON.stringify(driveData)); } catch(e) {}
-    renderAll();
+  let driveData = {};
+  if (resp.ok) {
+    const text = await resp.text();
+    if (text) { try { driveData = JSON.parse(text); } catch(e) { driveData = {}; } }
+  } else if (resp.status !== 404) {
+    throw new Error('pull ' + resp.status);
   }
-}
-
-async function drivePushNow() {
-  if (!driveToken || !driveFileId) return;
-  const body = localStorage.getItem('panel_v2') || '{}';
-  const resp = await fetch(
+  const local = load();
+  const merged = mergeState(local, driveData);
+  merged._lastModified = Date.now();
+  try { localStorage.setItem('panel_v2', JSON.stringify(merged)); } catch(e) {}
+  renderAll();
+  const put = await fetch(
     `https://www.googleapis.com/upload/drive/v3/files/${driveFileId}?uploadType=media`,
     {
       method: 'PATCH',
       headers: { Authorization: `Bearer ${driveToken}`, 'Content-Type': 'application/json' },
-      body
+      body: JSON.stringify(merged)
     }
   );
-  if (resp.status === 401) { driveToken = null; throw new Error('unauth'); }
-  if (!resp.ok) throw new Error('push ' + resp.status);
+  if (put.status === 401) { driveToken = null; throw new Error('unauth'); }
+  if (!put.ok) throw new Error('push ' + put.status);
 }
 
 function drivePush() {
@@ -1249,7 +1296,7 @@ function drivePush() {
   setSyncStatus('syncing');
   drivePushTimer = setTimeout(async () => {
     try {
-      await drivePushNow();
+      await driveSync();
       setSyncStatus('ok');
     } catch(e) {
       if (e.message === 'unauth') {
@@ -1280,7 +1327,9 @@ function init() {
     renderAll();
     if (driveToken && driveFileId) {
       setSyncStatus('syncing');
-      drivePull().then(() => setSyncStatus('ok')).catch(() => setSyncStatus('err'));
+      driveSync().then(() => setSyncStatus('ok')).catch((e) => {
+        if (e && e.message === 'unauth') driveConnect(true); else setSyncStatus('err');
+      });
     }
   });
 
