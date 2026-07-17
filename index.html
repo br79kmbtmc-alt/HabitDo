@@ -1153,7 +1153,7 @@ function renderAll() {
   renderTasks();
 }
 
-function setSyncStatus(state) {
+function setSyncStatus(state, detail) {
   const el = document.getElementById('syncStatus');
   if (!el) return;
   if (state === 'hidden') { el.innerHTML = ''; el.style.display = 'none'; return; }
@@ -1161,7 +1161,8 @@ function setSyncStatus(state) {
   if (state === 'off') {
     el.innerHTML = '<button class="sync-btn" onclick="driveConnect(false)">Drive\'a bağlan</button>';
   } else if (state === 'err') {
-    el.innerHTML = '<span class="sync-dot err"></span><button class="sync-btn" onclick="driveConnect(false)">Tekrar bağlan</button>';
+    const d = detail ? ` <span style="color:var(--text-faint);font-size:9px;">(${escapeHtml(String(detail))})</span>` : '';
+    el.innerHTML = '<span class="sync-dot err"></span><button class="sync-btn" onclick="driveConnect(false)">Tekrar bağlan</button>' + d;
   } else {
     const label = state === 'syncing' ? 'Senkron...' : 'Drive';
     el.innerHTML = `<span class="sync-dot ${state}"></span><span>${label}</span>`;
@@ -1187,17 +1188,18 @@ function driveConnect(silent) {
             await driveSync();
             setSyncStatus('ok');
           } catch(e) {
-            setSyncStatus('err');
+            setSyncStatus('err', (e && e.message) || 'sync hatası');
           }
         } else {
-          setSyncStatus('err');
+          setSyncStatus('err', 'token gelmedi');
         }
       },
-      error_callback: () => setSyncStatus('err')
+      error_callback: (err) => setSyncStatus('err', (err && (err.type || err.message)) || 'oauth')
     });
   }
   setSyncStatus('syncing');
-  driveTokenClient.requestAccessToken({ prompt: silent ? '' : '' });
+  // Sessiz (otomatik) denemede prompt boş; manuel "Tekrar bağlan"da onay ekranını zorla
+  driveTokenClient.requestAccessToken({ prompt: silent ? '' : 'consent' });
 }
 
 async function driveFindOrCreate() {
