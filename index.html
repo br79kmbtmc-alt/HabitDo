@@ -671,6 +671,21 @@ function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
+// Damgalı değer: {v: değer, m: değişiklik zamanı}. Eski düz değerlerle geriye uyumlu.
+function gv(x) { return (x && typeof x === 'object') ? x.v : x; }
+function gm(x) {
+  if (x && typeof x === 'object') return x.m || 0;
+  // Eski düz grooming değerleri ms timestamp (>1e12); onları kendi değişiklik zamanı say
+  return (typeof x === 'number' && x > 1e12) ? x : 0;
+}
+function stamp(v) { return { v: v, m: Date.now() }; }
+// Merge: en son DÜZENLENEN kazanır (en büyük değer değil)
+function mergeStamped(a, b) {
+  if (a === undefined) return b;
+  if (b === undefined) return a;
+  return gm(a) >= gm(b) ? a : b;
+}
+
 function loadLists() {
   const s = load();
   HABITS       = Array.isArray(s.habitList)    ? s.habitList    : DEFAULT_HABITS.map(h => ({ ...h }));
@@ -717,7 +732,7 @@ function confirmAddHabit() {
   const val = input.value.trim();
   if (!val) { renderHabits(); return; }
   input.onblur = null;
-  HABITS.push({ id: 'h' + Date.now() + Math.floor(Math.random() * 1000), name: val });
+  HABITS.push({ id: 'h' + Date.now() + Math.floor(Math.random() * 1000), name: val, mod: Date.now() });
   saveLists();
   renderHabits();
 }
@@ -752,7 +767,7 @@ function confirmAddTask() {
   const val = input.value.trim();
   if (!val) { renderTasks(); return; }
   input.onblur = null;
-  TASKS.push({ id: 't' + Date.now() + Math.floor(Math.random() * 1000), text: val });
+  TASKS.push({ id: 't' + Date.now() + Math.floor(Math.random() * 1000), text: val, mod: Date.now() });
   saveLists();
   renderTasks();
 }
@@ -769,7 +784,7 @@ function deleteTask(id) {
 
 function isHabitDone(id) {
   const s = load();
-  return !!(s.habits && s.habits[todayKey()] && s.habits[todayKey()][id]);
+  return !!gv(s.habits && s.habits[todayKey()] && s.habits[todayKey()][id]);
 }
 
 function toggleHabit(id) {
@@ -777,7 +792,7 @@ function toggleHabit(id) {
   const s = load();
   if (!s.habits) s.habits = {};
   if (!s.habits[todayKey()]) s.habits[todayKey()] = {};
-  s.habits[todayKey()][id] = !s.habits[todayKey()][id];
+  s.habits[todayKey()][id] = stamp(!gv(s.habits[todayKey()][id]));
   save(s);
   renderHabits();
   renderSummary();
@@ -788,7 +803,7 @@ function getStreak7(id) {
   const dots = [];
   for (let i = 6; i >= 0; i--) {
     const k = dayKey(i);
-    const hit = !!(s.habits && s.habits[k] && s.habits[k][id]);
+    const hit = !!gv(s.habits && s.habits[k] && s.habits[k][id]);
     dots.push({ hit, today: i === 0 });
   }
   return dots;
@@ -798,7 +813,7 @@ function getLongestStreak(id) {
   const s = load();
   if (!s.habits) return 0;
   const dates = Object.keys(s.habits)
-    .filter(k => s.habits[k][id])
+    .filter(k => gv(s.habits[k][id]))
     .map(k => {
       const [y, m, d] = k.split('-').map(Number);
       return new Date(y, m - 1, d).getTime();
@@ -849,22 +864,29 @@ function renderHabits() {
 function logGrooming(id) {
   const s = load();
   if (!s.grooming) s.grooming = {};
-  s.grooming[id] = Date.now();
+  s.grooming[id] = stamp(Date.now());
   save(s);
   renderGrooming();
 }
 
+function calDaysAgo(ts) {
+  // Geçen saate göre değil, TAKVİM gününe göre fark (dün 20:00 → bu sabah = 1 gün)
+  const a = new Date(); a.setHours(0, 0, 0, 0);
+  const b = new Date(ts); b.setHours(0, 0, 0, 0);
+  return Math.round((a - b) / 86400000);
+}
+
 function groomingTimeLabel(ts) {
-  const hours = (Date.now() - ts) / 3600000;
-  const daysAgo = Math.floor(hours / 24);
+  const mins = (Date.now() - ts) / 60000;
   const d = new Date(ts);
   const timeStr = d.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
   const dateStr = d.toLocaleDateString('tr-TR', { day: 'numeric', month: 'long' });
-  if (Math.round(hours) < 1) return 'Az önce';
-  if (hours < 24) return Math.round(hours) + ' saat önce';
-  if (daysAgo === 1) return 'Dün, ' + timeStr;
-  if (daysAgo < 7) return daysAgo + ' gün önce';
-  return daysAgo + ' gün önce · ' + dateStr;
+  const days = calDaysAgo(ts);
+  if (mins < 60) return 'Az önce';
+  if (days <= 0) return Math.round(mins / 60) + ' saat önce';
+  if (days === 1) return 'Dün, ' + timeStr;
+  if (days < 7) return days + ' gün önce';
+  return days + ' gün önce · ' + dateStr;
 }
 
 function tsToDatetimeLocal(ts) {
@@ -905,7 +927,7 @@ function applyQuickTime(id, offsetStr) {
   }
   const s = load();
   if (!s.grooming) s.grooming = {};
-  s.grooming[id] = ts;
+  s.grooming[id] = stamp(ts);
   save(s);
   renderGrooming();
 }
@@ -914,7 +936,7 @@ function showCustomGroomingTime(id) {
   const el = document.getElementById('grooming-sub-' + id);
   if (!el) return;
   const s = load();
-  const ts = s.grooming && s.grooming[id];
+  const ts = gv(s.grooming && s.grooming[id]);
   el.innerHTML = `
     <div style="display:flex;align-items:center;gap:6px;margin-top:4px;" onclick="event.stopPropagation()">
       <input type="datetime-local" value="${ts ? tsToDatetimeLocal(ts) : ''}"
@@ -932,7 +954,7 @@ function saveGroomingTime(id, val) {
   if (isNaN(ts)) { renderGrooming(); return; }
   const s = load();
   if (!s.grooming) s.grooming = {};
-  s.grooming[id] = ts;
+  s.grooming[id] = stamp(ts);
   save(s);
   renderGrooming();
 }
@@ -943,6 +965,7 @@ function updateWarnHours(id, val) {
   const g = GROOMING_LIST.find(x => x.id === id);
   if (!g) return;
   g.warnAfterHours = hours;
+  g.mod = Date.now();
   saveLists();
 }
 
@@ -964,7 +987,7 @@ function confirmAddGrooming() {
   const val = input.value.trim();
   if (!val) { renderGrooming(); return; }
   input.onblur = null;
-  GROOMING_LIST.push({ id: 'g' + Date.now() + Math.floor(Math.random() * 1000), name: val, btnText: 'Şimdi yaptım', warnAfterHours: 48 });
+  GROOMING_LIST.push({ id: 'g' + Date.now() + Math.floor(Math.random() * 1000), name: val, btnText: 'Şimdi yaptım', warnAfterHours: 48, mod: Date.now() });
   saveLists();
   renderGrooming();
 }
@@ -984,7 +1007,7 @@ function renderGrooming() {
   const container = document.getElementById('groomingContainer');
   container.innerHTML = '';
   GROOMING_LIST.forEach(g => {
-    const ts = s.grooming && s.grooming[g.id];
+    const ts = gv(s.grooming && s.grooming[g.id]);
     const subText = ts ? groomingTimeLabel(ts) : 'Henüz kayıt yok';
     const overdue = ts && ((Date.now() - ts) / 3600000) > (g.warnAfterHours || 48);
     const warnConfig = editMode ? `
@@ -1021,14 +1044,14 @@ function renderGrooming() {
 function setWater(count) {
   const s = load();
   if (!s.water) s.water = {};
-  s.water[todayKey()] = count;
+  s.water[todayKey()] = stamp(count);
   save(s);
   renderWater();
 }
 
 function renderWater() {
   const s = load();
-  const count = (s.water && s.water[todayKey()]) || 0;
+  const count = gv(s.water && s.water[todayKey()]) || 0;
   const container = document.getElementById('waterCups');
   let html = '';
   for (let i = 0; i < WATER_GOAL; i++) {
@@ -1042,14 +1065,14 @@ function renderWater() {
 
 function isTaskDone(id) {
   const s = load();
-  return !!(s.tasks && s.tasks[id]);
+  return !!gv(s.tasks && s.tasks[id]);
 }
 
 function toggleTask(id) {
   if (editMode) return;
   const s = load();
   if (!s.tasks) s.tasks = {};
-  s.tasks[id] = !s.tasks[id];
+  s.tasks[id] = stamp(!gv(s.tasks[id]));
   save(s);
   renderTasks();
 }
@@ -1108,13 +1131,13 @@ function renderSummary() {
   const s = load();
   const today = todayKey();
   const todayHabits = s.habits && s.habits[today] ? s.habits[today] : {};
-  const doneCount = Object.values(todayHabits).filter(Boolean).length;
+  const doneCount = Object.values(todayHabits).filter(x => gv(x)).length;
 
   let weekTotal = 0;
   for (let i = 0; i < 7; i++) {
     const k = dayKey(i);
     const dayHabits = s.habits && s.habits[k] ? s.habits[k] : {};
-    weekTotal += Object.values(dayHabits).filter(Boolean).length;
+    weekTotal += Object.values(dayHabits).filter(x => gv(x)).length;
   }
 
   let bestStreak = 0;
@@ -1239,17 +1262,17 @@ function mergeMap(a, b, combine) {
 }
 
 function mergeList(a, b, deleted) {
-  const result = [];
-  const seen = new Set();
+  // Aynı id iki tarafta da varsa, son düzenlenen (mod) kazanır — ⏰ eşiği gibi
+  // alan değişiklikleri diğer cihaza da yayılsın diye
+  const byId = new Map();
   const add = (arr) => (arr || []).forEach(item => {
     if (!item || !item.id) return;
     if (deleted && deleted[item.id]) return;
-    if (seen.has(item.id)) return;
-    seen.add(item.id);
-    result.push(item);
+    const prev = byId.get(item.id);
+    if (!prev || (item.mod || 0) > (prev.mod || 0)) byId.set(item.id, item);
   });
   add(a); add(b);
-  return result;
+  return [...byId.values()];
 }
 
 // İki cihazın verisini kaybetmeden birleştirir (last-write-wins yerine union)
@@ -1259,14 +1282,12 @@ function mergeState(local, drive) {
   const out = Object.assign({}, drive, local); // bilinmeyen/skaler alanlar için local öncelikli
   const deleted = Object.assign({}, drive.deletedIds, local.deletedIds);
   out.deletedIds = deleted;
-  // habits: gün -> {habitId: bool}, ikisinden birinde yapıldıysa yapıldı
-  out.habits = mergeMap(local.habits, drive.habits, (ld, dd) => mergeMap(ld, dd, (a, b) => !!(a || b)));
-  // grooming: id -> timestamp, en yeni kazanır
-  out.grooming = mergeMap(local.grooming, drive.grooming, (a, b) => Math.max(a || 0, b || 0));
-  // water: gün -> bardak sayısı, en yüksek kazanır
-  out.water = mergeMap(local.water, drive.water, (a, b) => Math.max(a || 0, b || 0));
-  // tasks: id -> bool, ikisinden birinde işaretliyse işaretli
-  out.tasks = mergeMap(local.tasks, drive.tasks, (a, b) => !!(a || b));
+  // Tüm değerler damgalı: en son DÜZENLENEN kazanır — böylece geri alma /
+  // geriye tarih düzeltme senkronda diğer cihaz tarafından ezilmez
+  out.habits = mergeMap(local.habits, drive.habits, (ld, dd) => mergeMap(ld, dd, mergeStamped));
+  out.grooming = mergeMap(local.grooming, drive.grooming, mergeStamped);
+  out.water = mergeMap(local.water, drive.water, mergeStamped);
+  out.tasks = mergeMap(local.tasks, drive.tasks, mergeStamped);
   // listeler: id bazında birleşim, silinenler hariç
   if (local.habitList || drive.habitList) out.habitList = mergeList(local.habitList, drive.habitList, deleted);
   if (local.taskList || drive.taskList) out.taskList = mergeList(local.taskList, drive.taskList, deleted);
