@@ -116,18 +116,38 @@
     gap: 4px;
     margin-top: 6px;
     align-items: center;
+    min-height: 11px;
   }
 
+  /* Yapılmayan gün yer tutar ama ÇİZİLMEZ — yokluk hiçbir yere kodlanmaz */
   .dot {
     width: 7px;
     height: 7px;
     border-radius: 50%;
-    background: var(--border-strong);
+    background: transparent;
     flex-shrink: 0;
   }
 
   .dot.hit { background: var(--green); opacity: 0.75; }
   .dot.today-hit { background: var(--green); opacity: 1; width: 9px; height: 9px; }
+
+  /* Dokunuş anı geri bildirimi — yalnızca işaretlerken oynar, geri alırken sessizdir */
+  @keyframes popIn {
+    0%   { transform: scale(0.2); }
+    60%  { transform: scale(1.18); }
+    100% { transform: scale(1); }
+  }
+  @keyframes pressPop {
+    0%   { transform: scale(0.94); }
+    60%  { transform: scale(1.025); }
+    100% { transform: scale(1); }
+  }
+  .dot.pop, .cup.pop { animation: popIn 190ms cubic-bezier(.34,1.56,.64,1); }
+  .pressed { animation: pressPop 190ms cubic-bezier(.34,1.56,.64,1); }
+
+  @media (prefers-reduced-motion: reduce) {
+    .dot.pop, .cup.pop, .pressed { animation: none; }
+  }
 
   .streak-count {
     font-size: 11px;
@@ -183,18 +203,6 @@
     margin-top: 3px;
     font-weight: 300;
   }
-
-  .status-pill {
-    font-size: 11px;
-    font-weight: 500;
-    padding: 4px 10px;
-    border-radius: 100px;
-    flex-shrink: 0;
-  }
-
-  .pill-ok { background: var(--green-bg); color: var(--green); }
-  .pill-warn { background: var(--amber-bg); color: var(--amber); }
-  .pill-due { background: var(--red-bg); color: var(--red); }
 
   .shower-btn {
     font-family: 'DM Sans', sans-serif;
@@ -272,42 +280,6 @@
     color: var(--text-faint);
   }
 
-  /* Summary bar */
-  .summary {
-    background: var(--surface);
-    border: 0.5px solid var(--border);
-    border-radius: var(--radius);
-    padding: 14px 16px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 2rem;
-  }
-
-  .summary-label {
-    font-size: 13px;
-    color: var(--text-muted);
-  }
-
-  .summary-count {
-    font-family: 'DM Serif Display', serif;
-    font-size: 22px;
-    color: var(--text);
-    letter-spacing: -0.02em;
-  }
-
-  .summary-sub {
-    font-size: 11px;
-    color: var(--text-faint);
-  }
-
-  .divider {
-    width: 0.5px;
-    height: 32px;
-    background: var(--border);
-  }
-
-  .summary-item { text-align: center; }
 
   /* Sync status */
   .header-row {
@@ -363,8 +335,19 @@
   .water-row {
     display: flex;
     align-items: center;
+    flex-wrap: wrap;
     gap: 10px;
     margin-top: 10px;
+  }
+  .cup-add {
+    background: transparent;
+    border: 1px dashed var(--border-strong);
+    color: var(--text-faint);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 15px;
+    line-height: 1;
   }
   .cup {
     width: 26px;
@@ -391,11 +374,11 @@
   }
 
   /* Quick time picker */
-  .quick-time-picker { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
+  .quick-time-picker { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
   .quick-time-btn {
     font-family: 'DM Sans', sans-serif;
     font-size: 11px;
-    padding: 4px 9px;
+    padding: 5px 7px;
     border-radius: 100px;
     border: 0.5px solid var(--border-strong);
     background: var(--bg);
@@ -405,9 +388,36 @@
   }
   .quick-time-btn:active { opacity: 0.6; }
 
-  /* Grooming overdue */
-  .grooming-overdue { border-left: 2.5px solid var(--red) !important; }
-  .grooming-time-overdue { color: var(--red) !important; font-weight: 500; }
+  /* Ekran süresi — sadece kayıt, hedef/renk/trend yok */
+  .screen-value {
+    font-size: 14px;
+    color: var(--text);
+    cursor: pointer;
+    text-decoration: underline dotted var(--text-faint);
+    flex-shrink: 0;
+    white-space: nowrap;
+  }
+  .screen-edit { display: flex; align-items: center; gap: 4px; }
+  .screen-input {
+    width: 44px;
+    min-height: 32px;
+    border: 0.5px solid var(--border-strong);
+    border-radius: 6px;
+    background: var(--bg);
+    color: var(--text);
+    font-size: 16px;  /* 16'nın altı iOS'ta odaklanınca otomatik yakınlaştırma tetikler */
+    font-family: 'DM Sans', sans-serif;
+    padding: 4px 2px;
+    text-align: center;
+    -moz-appearance: textfield;
+  }
+  .screen-input::-webkit-outer-spin-button,
+  .screen-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+  .screen-unit { font-size: 11px; color: var(--text-faint); }
+
+  /* Eşik aşıldığında: alarm değil sinyal — bilgi kalır, suçlama gider */
+  .grooming-time-overdue { color: var(--amber); }
+  .grooming-next { color: var(--amber); opacity: 0.7; }
 
   /* Warn threshold config (edit mode) */
   .warn-config { display: flex; align-items: center; gap: 5px; margin-top: 6px; }
@@ -525,25 +535,6 @@
 
 <div class="page">
 
-  <div class="section" id="summarySection">
-    <div class="summary" id="summaryBar">
-      <div class="summary-item">
-        <div class="summary-count" id="sumDone">0</div>
-        <div class="summary-sub">bugün yapıldı</div>
-      </div>
-      <div class="divider"></div>
-      <div class="summary-item">
-        <div class="summary-count" id="sumStreak">0</div>
-        <div class="summary-sub">en uzun seri</div>
-      </div>
-      <div class="divider"></div>
-      <div class="summary-item">
-        <div class="summary-count" id="sumWeek">0</div>
-        <div class="summary-sub">bu hafta</div>
-      </div>
-    </div>
-  </div>
-
   <div class="section">
     <div class="section-label">Alışkanlıklar</div>
     <div id="habitsContainer"></div>
@@ -559,6 +550,11 @@
     <div class="water-card">
       <div id="waterCups" class="water-row"></div>
     </div>
+  </div>
+
+  <div class="section">
+    <div class="section-label">Ekran Süresi</div>
+    <div id="screenContainer"></div>
   </div>
 
   <div class="section">
@@ -596,7 +592,10 @@ const DEFAULT_GROOMING = [
   { id: 'sac',   name: 'Saç tıraşı',   btnText: 'Şimdi yaptım', warnAfterHours: 504 },
 ];
 
-const WATER_GOAL = 8;
+// Dokunuş anı geri bildirimi için geçici işaretler (yalnızca render süresince dolu)
+let justMarked = null;
+let justLogged = null;
+let justPoured = false;
 
 let HABITS = [];
 let TASKS = [];
@@ -679,6 +678,9 @@ function gm(x) {
   return (typeof x === 'number' && x > 1e12) ? x : 0;
 }
 function stamp(v) { return { v: v, m: Date.now() }; }
+// Gün düzeyinde girilmiş kayıt: saati uydurma olduğu için ekranda saat gösterilmez
+function stampDay(v) { return { v: v, m: Date.now(), day: true }; }
+function isDayOnly(x) { return !!(x && typeof x === 'object' && x.day); }
 // Merge: en son DÜZENLENEN kazanır (en büyük değer değil)
 function mergeStamped(a, b) {
   if (a === undefined) return b;
@@ -792,10 +794,12 @@ function toggleHabit(id) {
   const s = load();
   if (!s.habits) s.habits = {};
   if (!s.habits[todayKey()]) s.habits[todayKey()] = {};
-  s.habits[todayKey()][id] = stamp(!gv(s.habits[todayKey()][id]));
+  const nowDone = !gv(s.habits[todayKey()][id]);
+  s.habits[todayKey()][id] = stamp(nowDone);
   save(s);
+  justMarked = nowDone ? id : null;  // geri alma sessiz: "vazgeçtin" vurgusu olmasın
   renderHabits();
-  renderSummary();
+  justMarked = null;
 }
 
 function getStreak7(id) {
@@ -809,26 +813,6 @@ function getStreak7(id) {
   return dots;
 }
 
-function getLongestStreak(id) {
-  const s = load();
-  if (!s.habits) return 0;
-  const dates = Object.keys(s.habits)
-    .filter(k => gv(s.habits[k][id]))
-    .map(k => {
-      const [y, m, d] = k.split('-').map(Number);
-      return new Date(y, m - 1, d).getTime();
-    })
-    .sort((a, b) => a - b);
-  let best = 0, cur = 0, prev = null;
-  for (const t of dates) {
-    if (prev !== null && Math.round((t - prev) / 86400000) === 1) cur++;
-    else cur = 1;
-    if (cur > best) best = cur;
-    prev = t;
-  }
-  return best;
-}
-
 function renderHabits() {
   const container = document.getElementById('habitsContainer');
   container.innerHTML = '';
@@ -837,17 +821,19 @@ function renderHabits() {
     const dots = getStreak7(h.id);
     const hitCount = dots.filter(d => d.hit).length;
 
+    const pop = (h.id === justMarked);
+
     const card = document.createElement('div');
     card.className = 'habit-card';
     card.innerHTML = `
       <div class="habit-info">
         <div class="habit-name">${escapeHtml(h.name)}</div>
         <div class="streak-dots">
-          ${dots.map(d => `<div class="dot ${d.hit && d.today ? 'today-hit' : d.hit ? 'hit' : ''}"></div>`).join('')}
-          <span class="streak-count">${hitCount}/7</span>
+          ${dots.map(d => `<div class="dot ${d.hit && d.today ? 'today-hit' : d.hit ? 'hit' : ''}${d.hit && d.today && pop ? ' pop' : ''}"></div>`).join('')}
+          ${hitCount ? `<span class="streak-count">bu hafta ${hitCount}</span>` : ''}
         </div>
       </div>
-      <button class="habit-btn ${done ? 'done' : ''}" onclick="toggleHabit('${h.id}')">
+      <button class="habit-btn ${done ? 'done' : ''}${pop ? ' pressed' : ''}" onclick="toggleHabit('${h.id}')">
         ${done ? '✓ Yapıldı' : 'Yaptım'}
       </button>
       <button class="delete-btn" onclick="deleteHabit('${h.id}')">Sil</button>
@@ -866,7 +852,9 @@ function logGrooming(id) {
   if (!s.grooming) s.grooming = {};
   s.grooming[id] = stamp(Date.now());
   save(s);
+  justLogged = id;
   renderGrooming();
+  justLogged = null;
 }
 
 function calDaysAgo(ts) {
@@ -876,7 +864,7 @@ function calDaysAgo(ts) {
   return Math.round((a - b) / 86400000);
 }
 
-function groomingTimeLabel(ts) {
+function groomingTimeLabel(ts, dayOnly) {
   const mins = (Date.now() - ts) / 60000;
   const d = new Date(ts);
   const timeStr = d.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
@@ -884,7 +872,7 @@ function groomingTimeLabel(ts) {
   const days = calDaysAgo(ts);
   if (mins < 60) return 'Az önce';
   if (days <= 0) return Math.round(mins / 60) + ' saat önce';
-  if (days === 1) return 'Dün, ' + timeStr;
+  if (days === 1) return dayOnly ? 'Dün' : 'Dün, ' + timeStr;
   if (days < 7) return days + ' gün önce';
   return days + ' gün önce · ' + dateStr;
 }
@@ -898,36 +886,26 @@ function tsToDatetimeLocal(ts) {
 function editGroomingTime(id) {
   const el = document.getElementById('grooming-sub-' + id);
   if (!el) return;
-  const opts = [
-    ['Az önce',     '0'],
-    ['1 saat önce', '3600000'],
-    ['2 saat önce', '7200000'],
-    ['4 saat önce', '14400000'],
-    ['Dün sabah',   'yesterday-morning'],
-    ['Dün akşam',   'yesterday-evening'],
-    ['2 gün önce',  '172800000'],
-  ];
-  const btns = opts.map(([label, val]) =>
-    `<button class="quick-time-btn" onclick="applyQuickTime('${id}','${val}')">${label}</button>`
+  const opts = [['Bugün', 0], ['Dün', 1], ['2 gün', 2], ['3 gün', 3]];
+  const btns = opts.map(([label, days]) =>
+    `<button class="quick-time-btn" onclick="applyQuickTime('${id}',${days})">${label}</button>`
   ).join('');
   el.innerHTML = `<div class="quick-time-picker" onclick="event.stopPropagation()">${btns}
-    <button class="quick-time-btn" onclick="showCustomGroomingTime('${id}')">Özel...</button>
+    <button class="quick-time-btn" onclick="showCustomGroomingTime('${id}')">Özel</button>
     <button class="quick-time-btn" onclick="renderGrooming()" style="opacity:0.5">✕</button>
   </div>`;
 }
 
-function applyQuickTime(id, offsetStr) {
-  let ts;
-  if (offsetStr === 'yesterday-morning') {
-    const d = new Date(); d.setDate(d.getDate() - 1); d.setHours(8, 0, 0, 0); ts = d.getTime();
-  } else if (offsetStr === 'yesterday-evening') {
-    const d = new Date(); d.setDate(d.getDate() - 1); d.setHours(20, 0, 0, 0); ts = d.getTime();
-  } else {
-    ts = Date.now() - Number(offsetStr);
-  }
+// Gün düzeyi seçim: o anki saat, N gün geriye kaydırılmış.
+// "Bugün" tam şu an olduğu için kesin sayılır; geri günlerde saat uydurma olduğundan
+// dayOnly işaretlenir ve ekranda saat gösterilmez.
+function applyQuickTime(id, daysAgo) {
+  const n = Number(daysAgo);
+  const d = new Date();
+  d.setDate(d.getDate() - n);
   const s = load();
   if (!s.grooming) s.grooming = {};
-  s.grooming[id] = stamp(ts);
+  s.grooming[id] = n === 0 ? stamp(d.getTime()) : stampDay(d.getTime());
   save(s);
   renderGrooming();
 }
@@ -1007,9 +985,11 @@ function renderGrooming() {
   const container = document.getElementById('groomingContainer');
   container.innerHTML = '';
   GROOMING_LIST.forEach(g => {
-    const ts = gv(s.grooming && s.grooming[g.id]);
-    const subText = ts ? groomingTimeLabel(ts) : 'Henüz kayıt yok';
+    const raw = s.grooming && s.grooming[g.id];
+    const ts = gv(raw);
+    const subText = ts ? groomingTimeLabel(ts, isDayOnly(raw)) : '—';
     const overdue = ts && ((Date.now() - ts) / 3600000) > (g.warnAfterHours || 48);
+    const pop = (g.id === justLogged);
     const warnConfig = editMode ? `
       <div class="warn-config">
         <span class="warn-label">⏰</span>
@@ -1018,7 +998,7 @@ function renderGrooming() {
         <span class="warn-label">saatte uyar</span>
       </div>` : '';
     const card = document.createElement('div');
-    card.className = 'shower-card' + (overdue ? ' grooming-overdue' : '');
+    card.className = 'shower-card';
     card.style.marginBottom = '6px';
     card.innerHTML = `
       <div class="shower-info">
@@ -1026,10 +1006,10 @@ function renderGrooming() {
         <div class="shower-sub${ts ? ' editable-time' : ''}${overdue ? ' grooming-time-overdue' : ''}"
              id="grooming-sub-${g.id}"
              ${ts ? `onclick="editGroomingTime('${g.id}')"` : ''}
-        >${escapeHtml(subText)}</div>
+        >${escapeHtml(subText)}${overdue ? ' <span class="grooming-next">· sırada</span>' : ''}</div>
         ${warnConfig}
       </div>
-      <button class="shower-btn" onclick="logGrooming('${g.id}')">${escapeHtml(g.btnText)}</button>
+      <button class="shower-btn${pop ? ' pressed' : ''}" onclick="logGrooming('${g.id}')">${escapeHtml(g.btnText)}</button>
       <button class="delete-btn" onclick="deleteGrooming('${g.id}')">Sil</button>
     `;
     container.appendChild(card);
@@ -1042,25 +1022,99 @@ function renderGrooming() {
 }
 
 function setWater(count) {
+  if (count < 0) return;
   const s = load();
+  const prev = gv(s.water && s.water[todayKey()]) || 0;
   if (!s.water) s.water = {};
   s.water[todayKey()] = stamp(count);
   save(s);
+  justPoured = count > prev;  // azaltırken sessiz
   renderWater();
+  justPoured = false;
 }
 
+// Boş kare çizilmez, payda yok — sadece içilen birikir
 function renderWater() {
   const s = load();
   const count = gv(s.water && s.water[todayKey()]) || 0;
   const container = document.getElementById('waterCups');
   let html = '';
-  for (let i = 0; i < WATER_GOAL; i++) {
-    const filled = i < count;
-    const next = filled ? i : i + 1;
-    html += `<div class="cup${filled ? ' filled' : ''}" onclick="setWater(${next})"></div>`;
+  for (let i = 0; i < count; i++) {
+    const pop = (i === count - 1 && justPoured) ? ' pop' : '';
+    // Dolu kareye basmak o noktaya kadar geri alır
+    html += `<div class="cup filled${pop}" onclick="setWater(${i})"></div>`;
   }
-  html += `<span class="water-count">${count}/${WATER_GOAL} bardak</span>`;
+  html += `<div class="cup cup-add" onclick="setWater(${count + 1})">+</div>`;
+  if (count) html += `<span class="water-count">${count} bardak</span>`;
   container.innerHTML = html;
+}
+
+function screenLabel(mins) {
+  if (!mins) return '—';
+  const h = Math.floor(mins / 60), m = mins % 60;
+  if (h && m) return h + ' sa ' + m + ' dk';
+  if (h) return h + ' sa';
+  return m + ' dk';
+}
+
+// Kaydet, notlandırma: hedef yok, renk yok, trend yok
+function renderScreen() {
+  const s = load();
+  const container = document.getElementById('screenContainer');
+  container.innerHTML = '';
+  [['Bugün', 0], ['Dün', 1]].forEach(([label, off]) => {
+    const k = dayKey(off);
+    const mins = gv(s.screen && s.screen[k]);
+    const card = document.createElement('div');
+    card.className = 'shower-card';
+    card.style.marginBottom = '6px';
+    card.innerHTML = `
+      <div class="shower-info"><div class="shower-title">${label}</div></div>
+      <div class="screen-value" id="screen-val-${k}" onclick="editScreen('${k}')">${screenLabel(mins)}</div>
+    `;
+    container.appendChild(card);
+  });
+}
+
+function editScreen(k) {
+  const el = document.getElementById('screen-val-' + k);
+  if (!el) return;
+  const s = load();
+  const mins = gv(s.screen && s.screen[k]) || 0;
+  const hVal = Math.floor(mins / 60) || '';
+  const mVal = mins % 60 || '';
+  el.innerHTML = `<div class="screen-edit" onclick="event.stopPropagation()">
+      <input type="number" inputmode="numeric" min="0" max="24" id="scr-h-${k}" class="screen-input" placeholder="0" value="${hVal}" />
+      <span class="screen-unit">sa</span>
+      <input type="number" inputmode="numeric" min="0" max="59" id="scr-m-${k}" class="screen-input" placeholder="0" value="${mVal}" />
+      <span class="screen-unit">dk</span>
+      <button class="quick-time-btn" onclick="saveScreen('${k}')">✓</button>
+      <button class="quick-time-btn" onclick="renderScreen()" style="opacity:0.5">✕</button>
+    </div>`;
+  const hEl = document.getElementById('scr-h-' + k);
+  const mEl = document.getElementById('scr-m-' + k);
+  const onKey = (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); saveScreen(k); }
+    else if (e.key === 'Escape') { e.preventDefault(); renderScreen(); }
+  };
+  hEl.onkeydown = onKey;
+  mEl.onkeydown = onKey;
+  hEl.focus();
+  hEl.select();
+}
+
+function saveScreen(k) {
+  const hEl = document.getElementById('scr-h-' + k);
+  const mEl = document.getElementById('scr-m-' + k);
+  if (!hEl || !mEl) return;
+  const h = Math.max(0, parseInt(hEl.value) || 0);
+  const m = Math.max(0, parseInt(mEl.value) || 0);
+  const s = load();
+  if (!s.screen) s.screen = {};
+  // 0 da geçerli bir değer olarak yazılır (silmek yerine) — senkronda geri gelmesin diye
+  s.screen[k] = stamp(h * 60 + m);
+  save(s);
+  renderScreen();
 }
 
 function isTaskDone(id) {
@@ -1127,30 +1181,6 @@ function renderTasks() {
   }
 }
 
-function renderSummary() {
-  const s = load();
-  const today = todayKey();
-  const todayHabits = s.habits && s.habits[today] ? s.habits[today] : {};
-  const doneCount = Object.values(todayHabits).filter(x => gv(x)).length;
-
-  let weekTotal = 0;
-  for (let i = 0; i < 7; i++) {
-    const k = dayKey(i);
-    const dayHabits = s.habits && s.habits[k] ? s.habits[k] : {};
-    weekTotal += Object.values(dayHabits).filter(x => gv(x)).length;
-  }
-
-  let bestStreak = 0;
-  HABITS.forEach(h => {
-    const streak = getLongestStreak(h.id);
-    if (streak > bestStreak) bestStreak = streak;
-  });
-
-  document.getElementById('sumDone').textContent = doneCount;
-  document.getElementById('sumWeek').textContent = weekTotal;
-  document.getElementById('sumStreak').textContent = bestStreak;
-}
-
 function renderHeader() {
   const d = new Date();
   const days = ['Pazar','Pazartesi','Salı','Çarşamba','Perşembe','Cuma','Cumartesi'];
@@ -1162,10 +1192,10 @@ function renderHeader() {
 function renderAll() {
   loadLists();
   renderHeader();
-  renderSummary();
   renderHabits();
   renderGrooming();
   renderWater();
+  renderScreen();
   renderTasks();
 }
 
@@ -1287,6 +1317,7 @@ function mergeState(local, drive) {
   out.habits = mergeMap(local.habits, drive.habits, (ld, dd) => mergeMap(ld, dd, mergeStamped));
   out.grooming = mergeMap(local.grooming, drive.grooming, mergeStamped);
   out.water = mergeMap(local.water, drive.water, mergeStamped);
+  out.screen = mergeMap(local.screen, drive.screen, mergeStamped);
   out.tasks = mergeMap(local.tasks, drive.tasks, mergeStamped);
   // listeler: id bazında birleşim, silinenler hariç
   if (local.habitList || drive.habitList) out.habitList = mergeList(local.habitList, drive.habitList, deleted);
