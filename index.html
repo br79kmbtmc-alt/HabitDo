@@ -597,6 +597,24 @@ let justMarked = null;
 let justLogged = null;
 let justPoured = false;
 
+// Gün devri takibi: sayfa açıkken gece yarısı geçerse ekran bayatlar,
+// yazma işlemleri yeni güne gider → görünen değerle yazılan gün ayrışır.
+let currentDayKey = null;
+let pendingRender = false;
+
+// Kullanıcı bir alana yazıyorsa DOM'u yıkma (arka plan render'ı yazılanı siliyordu)
+function uiBusy() {
+  const el = document.activeElement;
+  return !!(el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA'));
+}
+
+function safeRenderAll() {
+  if (uiBusy()) { pendingRender = true; return; }
+  pendingRender = false;
+  currentDayKey = todayKey();
+  renderAll();
+}
+
 let HABITS = [];
 let TASKS = [];
 let GROOMING_LIST = [];
@@ -605,6 +623,10 @@ let doneOpen = false;
 
 const SYNC_FILE = 'panel_v2.json';
 let syncPushTimer = null;
+// Açık pencere bayatlamasın: su/ekran süresi MUTLAK değer yazdığı için
+// bayat bir ekrandan yapılan dokunuş karşı cihazın kaydını ezebiliyordu.
+let lastSyncAt = 0;
+const SYNC_POLL_MS = 5 * 60 * 1000;
 
 function pad(n) { return String(n).padStart(2, '0'); }
 
@@ -625,19 +647,36 @@ function migrate() {
   if (!raw) return;
   let s;
   try { s = JSON.parse(raw); } catch(e) { return; }
-  if (!s.habits) return;
-  const migrated = {};
-  let changed = false;
-  Object.keys(s.habits).forEach(k => {
-    const parts = k.split('-');
-    if (parts.length !== 3) { migrated[k] = s.habits[k]; return; }
-    const normalized = parts[0] + '-' + parts[1].padStart(2, '0') + '-' + parts[2].padStart(2, '0');
-    if (normalized !== k) changed = true;
-    migrated[normalized] = Object.assign({}, migrated[normalized] || {}, s.habits[k]);
-  });
-  if (changed) {
-    s.habits = migrated;
-    try { localStorage.setItem('panel_v2', JSON.stringify(s)); } catch(e) {}
+  // NOT: burada erken return YOK — aşağıdaki onarımlar habits olmadan da çalışmalı
+  if (s.habits) {
+    const migrated = {};
+    let changed = false;
+    Object.keys(s.habits).forEach(k => {
+      const parts = k.split('-');
+      if (parts.length !== 3) { migrated[k] = s.habits[k]; return; }
+      const normalized = parts[0] + '-' + parts[1].padStart(2, '0') + '-' + parts[2].padStart(2, '0');
+      if (normalized !== k) changed = true;
+      migrated[normalized] = Object.assign({}, migrated[normalized] || {}, s.habits[k]);
+    });
+    if (changed) {
+      s.habits = migrated;
+      try { localStorage.setItem('panel_v2', JSON.stringify(s)); } catch(e) {}
+    }
+  }
+  // İleri tarihli bakım kaydını KALICI olarak şimdiye çek. Okuma tarafındaki
+  // kırpma yetmez: saklanan değer ileride kaldığı sürece fark hep 0 görünür
+  // ve sayaç o tarihe kadar hiç uyarmaz.
+  if (s.grooming) {
+    let fixed = false;
+    Object.keys(s.grooming).forEach(k => {
+      const raw = s.grooming[k];
+      if (typeof gv(raw) === 'number' && gv(raw) > Date.now()) {
+        const base = (raw && typeof raw === 'object') ? raw : {};
+        s.grooming[k] = Object.assign({}, base, { v: Date.now(), m: Date.now() });
+        fixed = true;
+      }
+    });
+    if (fixed) { try { localStorage.setItem('panel_v2', JSON.stringify(s)); } catch(e) {} }
   }
   // shower → grooming migration
   if (s.shower !== undefined) {
@@ -723,8 +762,9 @@ function startAddHabit() {
     if (e.key === 'Enter') { e.preventDefault(); confirmAddHabit(); }
     else if (e.key === 'Escape') { e.preventDefault(); renderHabits(); }
   };
+  // Odak kaybında yazılanı SİLME, kaydet (iOS'ta klavyeyi kapatmak siliyordu)
   input.onblur = () => {
-    if (document.getElementById('habitInput') === input) renderHabits();
+    if (document.getElementById('habitInput') === input) confirmAddHabit();
   };
 }
 
@@ -759,7 +799,7 @@ function startAddTask() {
     else if (e.key === 'Escape') { e.preventDefault(); renderTasks(); }
   };
   input.onblur = () => {
-    if (document.getElementById('taskInput') === input) renderTasks();
+    if (document.getElementById('taskInput') === input) confirmAddTask();
   };
 }
 
@@ -864,7 +904,12 @@ function calDaysAgo(ts) {
   return Math.round((a - b) / 86400000);
 }
 
-function groomingTimeLabel(ts, dayOnly) {
+// İleri tarihli kayıt sonsuza dek "Az önce" gösterip uyarıyı susturuyordu:
+// okumada da şimdiye kırp ki eski bozuk kayıtlar da düzgün görünsün.
+function safeTs(ts) { return Math.min(ts, Date.now()); }
+
+function groomingTimeLabel(rawTs, dayOnly) {
+  const ts = safeTs(rawTs);
   const mins = (Date.now() - ts) / 60000;
   const d = new Date(ts);
   const timeStr = d.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
@@ -917,7 +962,7 @@ function showCustomGroomingTime(id) {
   const ts = gv(s.grooming && s.grooming[id]);
   el.innerHTML = `
     <div style="display:flex;align-items:center;gap:6px;margin-top:4px;" onclick="event.stopPropagation()">
-      <input type="datetime-local" value="${ts ? tsToDatetimeLocal(ts) : ''}"
+      <input type="datetime-local" max="${tsToDatetimeLocal(Date.now())}" value="${ts ? tsToDatetimeLocal(ts) : ''}"
         style="flex:1;border:0.5px solid var(--border-strong);border-radius:6px;
                background:var(--bg);font-family:inherit;font-size:12px;
                color:var(--text);padding:4px 6px;"
@@ -928,8 +973,9 @@ function showCustomGroomingTime(id) {
 
 function saveGroomingTime(id, val) {
   if (!val) { renderGrooming(); return; }
-  const ts = new Date(val).getTime();
+  let ts = new Date(val).getTime();
   if (isNaN(ts)) { renderGrooming(); return; }
+  ts = Math.min(ts, Date.now());  // gelecekte bir şey yapmış olamazsın
   const s = load();
   if (!s.grooming) s.grooming = {};
   s.grooming[id] = stamp(ts);
@@ -956,7 +1002,7 @@ function startAddGrooming() {
     if (e.key === 'Enter') { e.preventDefault(); confirmAddGrooming(); }
     else if (e.key === 'Escape') { e.preventDefault(); renderGrooming(); }
   };
-  input.onblur = () => { if (document.getElementById('groomingInput') === input) renderGrooming(); };
+  input.onblur = () => { if (document.getElementById('groomingInput') === input) confirmAddGrooming(); };
 }
 
 function confirmAddGrooming() {
@@ -988,7 +1034,7 @@ function renderGrooming() {
     const raw = s.grooming && s.grooming[g.id];
     const ts = gv(raw);
     const subText = ts ? groomingTimeLabel(ts, isDayOnly(raw)) : '—';
-    const overdue = ts && ((Date.now() - ts) / 3600000) > (g.warnAfterHours || 48);
+    const overdue = ts && ((Date.now() - safeTs(ts)) / 3600000) > (g.warnAfterHours || 48);
     const pop = (g.id === justLogged);
     const warnConfig = editMode ? `
       <div class="warn-config">
@@ -1033,6 +1079,13 @@ function setWater(count) {
   justPoured = false;
 }
 
+// "+" sayıyı ekrandan değil DEPODAN taze okur: bayat ekran yeni güne
+// yanlış değer yazmasın (gece yarısı 3 → 4 yerine 1'den başlasın)
+function addWater() {
+  const s = load();
+  setWater((gv(s.water && s.water[todayKey()]) || 0) + 1);
+}
+
 // Boş kare çizilmez, payda yok — sadece içilen birikir
 function renderWater() {
   const s = load();
@@ -1044,7 +1097,7 @@ function renderWater() {
     // Dolu kareye basmak o noktaya kadar geri alır
     html += `<div class="cup filled${pop}" onclick="setWater(${i})"></div>`;
   }
-  html += `<div class="cup cup-add" onclick="setWater(${count + 1})">+</div>`;
+  html += `<div class="cup cup-add" onclick="addWater()">+</div>`;
   if (count) html += `<span class="water-count">${count} bardak</span>`;
   container.innerHTML = html;
 }
@@ -1217,6 +1270,25 @@ function setSyncStatus(state, detail) {
 
 function gistToken() { try { return localStorage.getItem('panel_gist_token') || ''; } catch(e) { return ''; } }
 function gistId() { try { return localStorage.getItem('panel_gist_id') || ''; } catch(e) { return ''; } }
+// Geçersiz kimlik bilgisini AT — yoksa "Tekrar dene" sonsuz döngüsüne girilir
+// ve arayüzde yeni token girmenin hiçbir yolu kalmaz.
+function clearGistToken() { try { localStorage.removeItem('panel_gist_token'); } catch(e) {} }
+function clearGistId() { try { localStorage.removeItem('panel_gist_id'); } catch(e) {} }
+
+// Anahtar sırasından bağımsız karşılaştırma: içerik değişmediyse PATCH atma.
+// Hem gereksiz yazma hem de karşı cihazı ezme riski azalır.
+function stableStr(v) {
+  if (v === null || typeof v !== 'object') return JSON.stringify(v);
+  if (Array.isArray(v)) return '[' + v.map(stableStr).join(',') + ']';
+  return '{' + Object.keys(v).filter(k => k !== '_lastModified').sort()
+    .map(k => JSON.stringify(k) + ':' + stableStr(v[k])).join(',') + '}';
+}
+
+function syncFailed(e) {
+  // Token temizlendiyse "Senkronu kur"a düş ki yeni token girilebilsin
+  if (!gistToken()) setSyncStatus('off');
+  else setSyncStatus('err', (e && e.message) || 'hata');
+}
 
 function promptGistToken() {
   const el = document.getElementById('syncStatus');
@@ -1243,9 +1315,7 @@ function promptGistToken() {
 function gistConnect() {
   if (!gistToken()) { promptGistToken(); return; }
   setSyncStatus('syncing');
-  gistSync().then(() => setSyncStatus('ok')).catch((e) => {
-    setSyncStatus('err', (e && e.message) || 'hata');
-  });
+  gistSync().then(() => setSyncStatus('ok')).catch(syncFailed);
 }
 
 async function gistApi(method, path, body) {
@@ -1263,7 +1333,7 @@ async function gistFindOrCreate() {
   let id = gistId();
   if (id) return id;
   const listResp = await gistApi('GET', '/gists?per_page=100');
-  if (listResp.status === 401) throw new Error('token geçersiz');
+  if (listResp.status === 401) { clearGistToken(); throw new Error('token geçersiz'); }
   if (!listResp.ok) throw new Error('list ' + listResp.status);
   const gists = await listResp.json();
   const found = Array.isArray(gists) ? gists.find(g => g.files && g.files[SYNC_FILE]) : null;
@@ -1275,7 +1345,7 @@ async function gistFindOrCreate() {
       public: false,
       files: { [SYNC_FILE]: { content: '{}' } }
     });
-    if (createResp.status === 401) throw new Error('token geçersiz');
+    if (createResp.status === 401) { clearGistToken(); throw new Error('token geçersiz'); }
     if (!createResp.ok) throw new Error('create ' + createResp.status);
     const created = await createResp.json();
     id = created.id;
@@ -1331,7 +1401,9 @@ async function gistSync() {
   if (!gistToken()) return;
   const id = await gistFindOrCreate();
   const getResp = await gistApi('GET', '/gists/' + id);
-  if (getResp.status === 401) throw new Error('token geçersiz');
+  if (getResp.status === 401) { clearGistToken(); throw new Error('token geçersiz'); }
+  // Kayıtlı gist silinmiş/erişilemez: id'yi at, sonraki denemede yeniden bulunur veya oluşturulur
+  if (getResp.status === 404) { clearGistId(); throw new Error('gist bulunamadı'); }
   if (!getResp.ok) throw new Error('pull ' + getResp.status);
   const gist = await getResp.json();
   let remote = {};
@@ -1341,12 +1413,17 @@ async function gistSync() {
   const merged = mergeState(local, remote);
   merged._lastModified = Date.now();
   try { localStorage.setItem('panel_v2', JSON.stringify(merged)); } catch(e) {}
-  renderAll();
+  safeRenderAll();
+  lastSyncAt = Date.now();
+  // Yerelde yeni bir şey yoksa yazma — boş PATCH karşı cihazla yarışmaya girmesin
+  if (stableStr(merged) === stableStr(remote)) return;
   const patchResp = await gistApi('PATCH', '/gists/' + id, {
     files: { [SYNC_FILE]: { content: JSON.stringify(merged) } }
   });
-  if (patchResp.status === 401) throw new Error('token geçersiz');
+  if (patchResp.status === 401) { clearGistToken(); throw new Error('token geçersiz'); }
+  if (patchResp.status === 404) { clearGistId(); throw new Error('gist bulunamadı'); }
   if (!patchResp.ok) throw new Error('push ' + patchResp.status);
+  lastSyncAt = Date.now();
 }
 
 function syncPush() {
@@ -1354,14 +1431,13 @@ function syncPush() {
   clearTimeout(syncPushTimer);
   setSyncStatus('syncing');
   syncPushTimer = setTimeout(() => {
-    gistSync().then(() => setSyncStatus('ok')).catch((e) => {
-      setSyncStatus('err', (e && e.message) || 'hata');
-    });
+    gistSync().then(() => setSyncStatus('ok')).catch(syncFailed);
   }, 1500);
 }
 
 function init() {
   migrate();
+  currentDayKey = todayKey();
   renderAll();
 
   if (gistToken()) {
@@ -1372,16 +1448,28 @@ function init() {
 
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) return;
-    renderAll();
+    safeRenderAll();
     if (gistToken()) {
       setSyncStatus('syncing');
-      gistSync().then(() => setSyncStatus('ok')).catch((e) => {
-        setSyncStatus('err', (e && e.message) || 'hata');
-      });
+      gistSync().then(() => setSyncStatus('ok')).catch(syncFailed);
     }
   });
 
-  setInterval(renderGrooming, 60000);
+  // Girdi kapanınca ertelenmiş render'ı uygula
+  document.addEventListener('focusout', () => {
+    setTimeout(() => { if (pendingRender && !uiBusy()) safeRenderAll(); }, 0);
+  });
+
+  setInterval(() => {
+    if (todayKey() !== currentDayKey) { safeRenderAll(); return; }  // gün devri
+    if (!uiBusy()) renderGrooming();
+    // Açık pencerede periyodik çekme: bayat ekrandan mutlak değer yazıp
+    // karşı cihazın kaydını ezme penceresini 5 dakikayla sınırlar
+    if (gistToken() && !document.hidden && !uiBusy() && Date.now() - lastSyncAt > SYNC_POLL_MS) {
+      setSyncStatus('syncing');
+      gistSync().then(() => setSyncStatus('ok')).catch(syncFailed);
+    }
+  }, 60000);
 }
 
 init();
