@@ -685,6 +685,7 @@ let EXERCISE_LIST = [];
 let currentView = 'panel';
 let entryOpenFor = null;   // giriş formu açık olan hareketin id'si
 let entryDayOff = 0;       // 0 = bugün, 1 = dün
+let entryDraft = null;     // gün değiştirirken yazılanı taşır
 let editMode = false;
 let doneOpen = false;
 
@@ -1396,9 +1397,22 @@ function renderWorkout() {
   if (entryOpenFor) renderEntry(entryOpenFor);
 }
 
-function openEntry(exId) { entryOpenFor = exId; entryDayOff = 0; renderWorkout(); }
-function closeEntry() { entryOpenFor = null; renderWorkout(); }
-function setEntryDay(exId, off) { entryDayOff = Number(off); renderEntry(exId); }
+function openEntry(exId) { entryOpenFor = exId; entryDayOff = 0; entryDraft = null; renderWorkout(); }
+function closeEntry() { entryOpenFor = null; entryDraft = null; renderWorkout(); }
+
+/* Gun degistirirken yazilani KAYBETME: hedef gunde kayit varsa onu goster,
+   yoksa kullanicinin girdigi degerleri tasi. */
+function setEntryDay(exId, off) {
+  const draft = [];
+  for (let i = 0; i < SET_COUNT; i++) {
+    const rEl = document.getElementById('rep-' + exId + '-' + i);
+    const wEl = document.getElementById('wt-' + exId + '-' + i);
+    draft.push({ r: rEl ? rEl.value : '', w: wEl ? wEl.value : '' });
+  }
+  entryDraft = draft.some(d => d.r !== '' || d.w !== '') ? draft : null;
+  entryDayOff = Number(off);
+  renderEntry(exId);
+}
 
 function renderEntry(exId) {
   const slot = document.getElementById('entry-' + exId);
@@ -1410,7 +1424,8 @@ function renderEntry(exId) {
   const existing = s.workouts && s.workouts[k] ? gv(s.workouts[k][exId]) : null;
   // O gunun kaydi varsa onu, yoksa son seansi on-doldur: progressive overload
   // bir sayiyi yukari itmekten ibaret kalsin, sifirdan yazmak gerekmesin.
-  const base = (existing && existing.length) ? existing : (last ? last.sets : null);
+  const base = (existing && existing.length) ? existing
+             : (entryDraft ? entryDraft : (last ? last.sets : null));
   let rows = '';
   for (let i = 0; i < SET_COUNT; i++) {
     const b = (base && base[i]) ? base[i] : { r: '', w: '' };
@@ -1455,6 +1470,7 @@ function saveEntry(exId) {
   s.workouts[k][exId] = stamp(sets);
   save(s);
   entryOpenFor = null;
+  entryDraft = null;
   renderWorkout();
 }
 
