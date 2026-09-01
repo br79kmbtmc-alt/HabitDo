@@ -449,9 +449,52 @@
   }
   .done-toggle:hover { color: var(--text-muted); }
 
+  [hidden] { display: none !important; }
+
+  /* Spor */
+  .ex-card {
+    background: var(--surface);
+    border: 0.5px solid var(--border);
+    border-radius: var(--radius);
+    padding: 14px 16px;
+    margin-bottom: 6px;
+  }
+  .ex-head { display: flex; align-items: center; gap: 10px; }
+  .ex-name { flex: 1; min-width: 0; font-size: 15px; color: var(--text); overflow-wrap: anywhere; }
+  .ex-sub { font-size: 12px; color: var(--text-muted); margin-top: 4px; font-weight: 300; }
+  .ex-up { color: var(--green); margin-left: 6px; }
+  .ex-flat { color: var(--text-faint); margin-left: 6px; }
+  .vol-chart { display: block; width: 100%; height: 30px; margin-top: 8px; }
+
+  .entry-box { margin-top: 10px; border-top: 0.5px solid var(--border); padding-top: 10px; }
+  .entry-day { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; margin-bottom: 8px; }
+  .entry-prev { font-size: 11px; color: var(--text-faint); }
+  .quick-time-btn.on { background: var(--green-bg); color: var(--green); border-color: transparent; }
+  .set-row { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
+  .set-no { width: 12px; font-size: 11px; color: var(--text-faint); }
+  .set-x, .set-unit { font-size: 11px; color: var(--text-faint); }
+  .set-input {
+    width: 64px;
+    min-height: 32px;
+    border: 0.5px solid var(--border-strong);
+    border-radius: 6px;
+    background: var(--bg);
+    color: var(--text);
+    font-size: 16px;
+    font-family: 'DM Sans', sans-serif;
+    padding: 4px 6px;
+    text-align: center;
+    -moz-appearance: textfield;
+  }
+  .set-input::-webkit-outer-spin-button,
+  .set-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+  .entry-actions { display: flex; gap: 6px; margin-top: 8px; }
+
   /* Edit mode */
   .edit-toggle-wrap {
-    text-align: center;
+    display: flex;
+    justify-content: center;
+    gap: 4px;
     margin-top: 2rem;
   }
   .edit-toggle {
@@ -535,6 +578,8 @@
 
 <div class="page">
 
+<div id="panelView">
+
   <div class="section">
     <div class="section-label">Alışkanlıklar</div>
     <div id="habitsContainer"></div>
@@ -562,8 +607,18 @@
     <div id="tasksContainer"></div>
   </div>
 
+</div><!-- /panelView -->
+
+<div id="sporView" hidden>
+  <div class="section">
+    <div class="section-label">Spor</div>
+    <div id="workoutContainer"></div>
+  </div>
+</div>
+
   <div class="edit-toggle-wrap">
     <button class="edit-toggle" id="editToggle" onclick="toggleEditMode()">Düzenle</button>
+    <button class="edit-toggle" id="viewToggle" onclick="toggleView()">Spor</button>
   </div>
 
 </div>
@@ -615,9 +670,21 @@ function safeRenderAll() {
   renderAll();
 }
 
+const DEFAULT_EXERCISES = [
+  { id: 'bench',    name: 'Bench Press' },
+  { id: 'squat',    name: 'Squat' },
+  { id: 'deadlift', name: 'Deadlift' },
+  { id: 'row',      name: 'Barbell Row' },
+];
+const SET_COUNT = 4;
+
 let HABITS = [];
 let TASKS = [];
 let GROOMING_LIST = [];
+let EXERCISE_LIST = [];
+let currentView = 'panel';
+let entryOpenFor = null;   // giriş formu açık olan hareketin id'si
+let entryDayOff = 0;       // 0 = bugün, 1 = dün
 let editMode = false;
 let doneOpen = false;
 
@@ -733,7 +800,9 @@ function loadLists() {
   TASKS        = Array.isArray(s.taskList)     ? s.taskList     : DEFAULT_TASKS.map(t => ({ ...t }));
   GROOMING_LIST = (Array.isArray(s.groomingList) ? s.groomingList : DEFAULT_GROOMING.map(g => ({ ...g })))
     .map(g => ({ warnAfterHours: 48, ...g }));
-  if (!Array.isArray(s.habitList) || !Array.isArray(s.taskList) || !Array.isArray(s.groomingList)) saveLists();
+  EXERCISE_LIST = Array.isArray(s.exerciseList) ? s.exerciseList : DEFAULT_EXERCISES.map(e => ({ ...e }));
+  if (!Array.isArray(s.habitList) || !Array.isArray(s.taskList) ||
+      !Array.isArray(s.groomingList) || !Array.isArray(s.exerciseList)) saveLists();
 }
 
 function saveLists() {
@@ -741,6 +810,7 @@ function saveLists() {
   s.habitList    = HABITS;
   s.taskList     = TASKS;
   s.groomingList = GROOMING_LIST;
+  s.exerciseList = EXERCISE_LIST;
   save(s);
 }
 
@@ -1234,6 +1304,210 @@ function renderTasks() {
   }
 }
 
+
+/* ---------- Spor: progressive overload takibi ---------- */
+/* Veri: s.workouts[gun][hareketId] = damgali [{r:tekrar, w:agirlik} x SET_COUNT] */
+
+function workoutSessions(exId) {
+  const s = load();
+  const w = s.workouts || {};
+  return Object.keys(w)
+    .filter(k => w[k] && w[k][exId])
+    .sort()                                   // gun anahtarlari sifir dolgulu, metin siralamasi dogru
+    .map(k => {
+      const sets = gv(w[k][exId]) || [];
+      return { key: k, sets: sets, vol: sets.reduce((a, x) => a + (Number(x.r)||0) * (Number(x.w)||0), 0) };
+    })
+    .filter(e => e.sets.length > 0);
+}
+
+function setsSummary(sets) {
+  if (!sets || !sets.length) return '—';
+  const reps = sets.map(x => x.r), wts = sets.map(x => x.w);
+  const sameR = reps.every(r => r === reps[0]);
+  const sameW = wts.every(x => x === wts[0]);
+  const rPart = sameR ? (sets.length + '×' + reps[0]) : reps.join('·');
+  const wPart = sameW ? (wts[0] + ' kg') : (wts.join('/') + ' kg');
+  return rPart + ' · ' + wPart;
+}
+
+/* Hacim = Σ(tekrar × agirlik). Hem tekrar hem agirlik artisini yakalar.
+   Cizgi + min-maks olcek: hacimler birbirine yakin oldugu icin sifirdan
+   olceklenen barlarda ilerleme gorunmuyordu. Cizgide sifir-taban zorunlu
+   degildir; barda olsaydi yaniltici olurdu.
+   Sekil isaretcisi YOK: preserveAspectRatio="none" altinda daireler ezilir,
+   cizgi ise bozulmaz (stroke genisligi non-scaling-stroke ile sabit). */
+function volChart(points) {
+  if (!points || points.length < 2) return '';
+  const W = 100, H = 30, P = 3.5, n = points.length;
+  const vols = points.map(p => p.vol);
+  const min = Math.min.apply(null, vols), max = Math.max.apply(null, vols);
+  const span = (max - min) || 1;
+  const px = i => 1 + (i / (n - 1)) * (W - 2);
+  const py = v => H - P - ((v - min) / span) * (H - 2 * P);
+  const xy = i => px(i).toFixed(2) + ',' + py(points[i].vol).toFixed(2);
+  let all = '';
+  for (let i = 0; i < n; i++) all += (i ? ' ' : '') + xy(i);
+  const tail = xy(n - 2) + ' ' + xy(n - 1);
+  const base = 'fill="none" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"';
+  return '<svg class="vol-chart" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none" aria-hidden="true">' +
+    '<polyline points="' + all + '" stroke="var(--border-strong)" stroke-width="1.5" ' + base + '/>' +
+    '<polyline points="' + tail + '" stroke="var(--green)" stroke-width="2" ' + base + '/>' +
+    '</svg>';
+}
+
+function renderWorkout() {
+  const container = document.getElementById('workoutContainer');
+  if (!container) return;
+  container.innerHTML = '';
+  EXERCISE_LIST.forEach(ex => {
+    const hist = workoutSessions(ex.id);
+    const last = hist[hist.length - 1];
+    const prev = hist[hist.length - 2];
+    let delta = '';
+    if (last && prev && prev.vol) {
+      const d = Math.round(((last.vol - prev.vol) / prev.vol) * 100);
+      // Dususte kirmizi YOK: deload/kotu gun normaldir, cezalandirma yuzeyi olmasin
+      if (d > 0)      delta = '<span class="ex-up">↑ %' + d + '</span>';
+      else if (d < 0) delta = '<span class="ex-flat">↓ %' + Math.abs(d) + '</span>';
+      else            delta = '<span class="ex-flat">→</span>';
+    }
+    const sub = last
+      ? escapeHtml(setsSummary(last.sets)) + ' · ' + last.vol.toLocaleString('tr-TR') + ' kg'
+      : 'Henüz kayıt yok';
+    const card = document.createElement('div');
+    card.className = 'ex-card';
+    card.innerHTML =
+      '<div class="ex-head">' +
+        '<div class="ex-name">' + escapeHtml(ex.name) + '</div>' +
+        '<button class="shower-btn" onclick="openEntry(\'' + ex.id + '\')">Gir</button>' +
+        '<button class="delete-btn" onclick="deleteExercise(\'' + ex.id + '\')">Sil</button>' +
+      '</div>' +
+      '<div class="ex-sub">' + sub + ' ' + delta + '</div>' +
+      volChart(hist.slice(-12)) +
+      '<div id="entry-' + ex.id + '"></div>';
+    container.appendChild(card);
+  });
+  const adder = document.createElement('div');
+  adder.className = 'adder-card';
+  adder.id = 'exerciseAdder';
+  adder.innerHTML = '<button class="adder-btn" onclick="startAddExercise()">+ Yeni hareket</button>';
+  container.appendChild(adder);
+  if (entryOpenFor) renderEntry(entryOpenFor);
+}
+
+function openEntry(exId) { entryOpenFor = exId; entryDayOff = 0; renderWorkout(); }
+function closeEntry() { entryOpenFor = null; renderWorkout(); }
+function setEntryDay(exId, off) { entryDayOff = Number(off); renderEntry(exId); }
+
+function renderEntry(exId) {
+  const slot = document.getElementById('entry-' + exId);
+  if (!slot) return;
+  const hist = workoutSessions(exId);
+  const last = hist[hist.length - 1];
+  const k = dayKey(entryDayOff);
+  const s = load();
+  const existing = s.workouts && s.workouts[k] ? gv(s.workouts[k][exId]) : null;
+  // O gunun kaydi varsa onu, yoksa son seansi on-doldur: progressive overload
+  // bir sayiyi yukari itmekten ibaret kalsin, sifirdan yazmak gerekmesin.
+  const base = (existing && existing.length) ? existing : (last ? last.sets : null);
+  let rows = '';
+  for (let i = 0; i < SET_COUNT; i++) {
+    const b = (base && base[i]) ? base[i] : { r: '', w: '' };
+    rows +=
+      '<div class="set-row">' +
+        '<span class="set-no">' + (i+1) + '</span>' +
+        '<input type="number" inputmode="numeric" min="0" class="set-input" id="rep-' + exId + '-' + i + '" placeholder="tekrar" value="' + (b.r === 0 || b.r ? b.r : '') + '" />' +
+        '<span class="set-x">×</span>' +
+        '<input type="number" inputmode="decimal" min="0" step="0.5" class="set-input" id="wt-' + exId + '-' + i + '" placeholder="kg" value="' + (b.w === 0 || b.w ? b.w : '') + '" />' +
+        '<span class="set-unit">kg</span>' +
+      '</div>';
+  }
+  slot.innerHTML =
+    '<div class="entry-box" onclick="event.stopPropagation()">' +
+      '<div class="entry-day">' +
+        '<button class="quick-time-btn' + (entryDayOff===0 ? ' on' : '') + '" onclick="setEntryDay(\'' + exId + '\',0)">Bugün</button>' +
+        '<button class="quick-time-btn' + (entryDayOff===1 ? ' on' : '') + '" onclick="setEntryDay(\'' + exId + '\',1)">Dün</button>' +
+        (last ? '<span class="entry-prev">önceki: ' + escapeHtml(setsSummary(last.sets)) + '</span>' : '') +
+      '</div>' + rows +
+      '<div class="entry-actions">' +
+        '<button class="quick-time-btn" onclick="saveEntry(\'' + exId + '\')">Kaydet</button>' +
+        '<button class="quick-time-btn" onclick="closeEntry()">İptal</button>' +
+      '</div>' +
+    '</div>';
+}
+
+function saveEntry(exId) {
+  const sets = [];
+  for (let i = 0; i < SET_COUNT; i++) {
+    const rEl = document.getElementById('rep-' + exId + '-' + i);
+    const wEl = document.getElementById('wt-' + exId + '-' + i);
+    if (!rEl || !wEl) continue;
+    const r = Math.max(0, parseInt(rEl.value) || 0);
+    const w = Math.max(0, parseFloat(wEl.value) || 0);
+    if (r > 0) sets.push({ r: r, w: w });
+  }
+  const s = load();
+  if (!s.workouts) s.workouts = {};
+  const k = dayKey(entryDayOff);
+  if (!s.workouts[k]) s.workouts[k] = {};
+  // Bos da olsa damgali yazilir (silinmez) ki senkronda eski kayit dirilmesin
+  s.workouts[k][exId] = stamp(sets);
+  save(s);
+  entryOpenFor = null;
+  renderWorkout();
+}
+
+function startAddExercise() {
+  const adder = document.getElementById('exerciseAdder');
+  adder.innerHTML = '<div class="adder-input-card"><input id="exerciseInput" placeholder="Hareket adı..." /></div>';
+  const input = document.getElementById('exerciseInput');
+  input.focus();
+  input.onkeydown = (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); confirmAddExercise(); }
+    else if (e.key === 'Escape') { e.preventDefault(); renderWorkout(); }
+  };
+  input.onblur = () => { if (document.getElementById('exerciseInput') === input) confirmAddExercise(); };
+}
+
+function confirmAddExercise() {
+  const input = document.getElementById('exerciseInput');
+  if (!input) return;
+  const val = input.value.trim();
+  if (!val) { renderWorkout(); return; }
+  input.onblur = null;
+  EXERCISE_LIST.push({ id: 'e' + Date.now() + Math.floor(Math.random() * 1000), name: val, mod: Date.now() });
+  saveLists();
+  renderWorkout();
+}
+
+function deleteExercise(id) {
+  const ex = EXERCISE_LIST.find(x => x.id === id);
+  if (!ex) return;
+  if (!confirm('"' + ex.name + '" silinsin mi?')) return;
+  EXERCISE_LIST = EXERCISE_LIST.filter(x => x.id !== id);
+  recordDeletion(id);
+  saveLists();
+  if (entryOpenFor === id) entryOpenFor = null;
+  renderWorkout();
+}
+
+function applyView() {
+  const pv = document.getElementById('panelView');
+  const sv = document.getElementById('sporView');
+  const btn = document.getElementById('viewToggle');
+  if (!pv || !sv) return;
+  pv.hidden = (currentView !== 'panel');
+  sv.hidden = (currentView !== 'spor');
+  if (btn) btn.textContent = (currentView === 'panel') ? 'Spor' : 'Panel';
+}
+
+function toggleView() {
+  currentView = (currentView === 'panel') ? 'spor' : 'panel';
+  applyView();
+  window.scrollTo(0, 0);
+}
+
 function renderHeader() {
   const d = new Date();
   const days = ['Pazar','Pazartesi','Salı','Çarşamba','Perşembe','Cuma','Cumartesi'];
@@ -1250,6 +1524,8 @@ function renderAll() {
   renderWater();
   renderScreen();
   renderTasks();
+  renderWorkout();
+  applyView();
 }
 
 function setSyncStatus(state, detail) {
@@ -1388,6 +1664,7 @@ function mergeState(local, drive) {
   out.grooming = mergeMap(local.grooming, drive.grooming, mergeStamped);
   out.water = mergeMap(local.water, drive.water, mergeStamped);
   out.screen = mergeMap(local.screen, drive.screen, mergeStamped);
+  out.workouts = mergeMap(local.workouts, drive.workouts, (ld, dd) => mergeMap(ld, dd, mergeStamped));
   out.tasks = mergeMap(local.tasks, drive.tasks, mergeStamped);
   // listeler: id bazında birleşim, silinenler hariç
   if (local.habitList || drive.habitList) out.habitList = mergeList(local.habitList, drive.habitList, deleted);
