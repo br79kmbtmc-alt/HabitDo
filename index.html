@@ -1686,6 +1686,7 @@ function mergeState(local, drive) {
   if (local.habitList || drive.habitList) out.habitList = mergeList(local.habitList, drive.habitList, deleted);
   if (local.taskList || drive.taskList) out.taskList = mergeList(local.taskList, drive.taskList, deleted);
   if (local.groomingList || drive.groomingList) out.groomingList = mergeList(local.groomingList, drive.groomingList, deleted);
+  if (local.exerciseList || drive.exerciseList) out.exerciseList = mergeList(local.exerciseList, drive.exerciseList, deleted);
   return out;
 }
 
